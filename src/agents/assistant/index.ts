@@ -214,23 +214,25 @@ export class UltronAssistant {
         const remoteMatch = lowerMessage.match(/(?:remote add|set remote|remote url|remote to)\s+(https?:\/\/[^\s]+|git@[^\s]+)/i);
         if (remoteMatch && remoteMatch[1]) {
           const res = await gitService.setRemote(remoteMatch[1]);
-          jobContext += `\n\n[GIT ACTION RESULT]: ${res.message}`;
+          jobContext += `\n\n[GIT ACTION RESULT]: ${res.message}. Inform Boss that remote origin has been configured.`;
         } else if (/push/i.test(lowerMessage)) {
           // Extract optional custom commit message: 'commit "message" and push'
           const msgMatch = lowerMessage.match(/(?:message|commit)\s+["']([^"']+)["']/i);
           const commitMsg = msgMatch ? msgMatch[1] : `Update from Boss via Ultron AI (${new Date().toLocaleDateString()})`;
           const pushRes = await gitService.commitAndPush(commitMsg);
-          jobContext += `\n\n[GIT PUSH RESULT]: ${pushRes.message}` + (pushRes.output ? `\nOutput: ${pushRes.output}` : '');
+          jobContext += `\n\n[LIVE GIT PUSH RESULT]: ${pushRes.message}` + (pushRes.output ? `\nOutput: ${pushRes.output}` : '') +
+            `\n\nInform Boss of the exact push result clearly.`;
         } else if (/pull/i.test(lowerMessage)) {
           const pullRes = await gitService.pull();
-          jobContext += `\n\n[GIT PULL RESULT]: ${pullRes.message}` + (pullRes.output ? `\nOutput: ${pullRes.output}` : '');
+          jobContext += `\n\n[LIVE GIT PULL RESULT]: ${pullRes.message}` + (pullRes.output ? `\nOutput: ${pullRes.output}` : '') +
+            `\n\nInform Boss of the exact pull result clearly.`;
         } else {
           // Status
           const status = await gitService.getStatus();
           if (!status.isRepo) {
             jobContext += `\n\n[GIT STATUS]: Repository is not initialized yet. Tell Boss they can say 'git init' or provide a remote repository URL.`;
           } else {
-            jobContext += `\n\n[GIT STATUS]: Branch: ${status.branch} | Clean: ${status.clean} | Modified files: ${status.modified.join(', ') || 'None'} | Untracked: ${status.untracked.slice(0, 5).join(', ') || 'None'}`;
+            jobContext += `\n\n[LIVE GIT STATUS]: Repository is active and connected to remote: ${status.remoteUrl || 'origin'}. Branch: ${status.branch} | Clean: ${status.clean} | Modified files: ${status.modified.join(', ') || 'None'} | Untracked: ${status.untracked.slice(0, 5).join(', ') || 'None'}. Report this real live git status to Boss.`;
           }
         }
       } catch (e: any) {
