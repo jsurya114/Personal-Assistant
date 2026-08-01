@@ -1,28 +1,53 @@
-import { spawn, exec } from 'child_process';
-import util from 'util';
+import { spawn } from 'child_process';
 import path from 'path';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
 import { popUltronDashboard } from './utils/window';
 
-const execAsync = util.promisify(exec);
 let assistant: UltronAssistant;
 let isSpeaking = false;
 let isProcessing = false;
 
-// Simple TTS wrapper for macOS
-async function speak(text: string) {
-  isSpeaking = true;
-  console.log(`\n🎙️ [Buddy]: ${text}\n`);
-  try {
-    // Sanitize text for CLI
-    const safeText = text.replace(/"/g, '\\"').replace(/\n/g, ' ');
-    await execAsync(`say "${safeText}"`);
-  } catch (error) {
-    console.error('Error playing audio:', error);
-  } finally {
-    isSpeaking = false;
-  }
+function cleanTextForSpeech(rawText: string): string {
+  return rawText
+    .replace(/```[\s\S]*?```/g, 'code snippet.') // replace code blocks
+    .replace(/`([^`]+)`/g, '$1') // remove backticks
+    .replace(/#{1,6}\s*/g, '') // remove markdown headings
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // remove bold
+    .replace(/\*([^*]+)\*/g, '$1') // remove italic
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // remove links
+    .replace(/^[-*+]\s+/gm, '') // remove list bullets
+    .replace(/[-_]{3,}/g, '') // remove horizontal rules
+    .replace(/\n+/g, '. ') // replace newlines with pauses
+    .replace(/\s{2,}/g, ' ') // collapse multiple spaces
+    .trim();
+}
+
+// Safe TTS wrapper for macOS using direct process invocation
+function speak(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    isSpeaking = true;
+    console.log(`\n🎙️ [Buddy]: ${text}\n`);
+
+    const clean = cleanTextForSpeech(text);
+    if (!clean) {
+      isSpeaking = false;
+      return resolve();
+    }
+
+    const child = spawn('say', [clean]);
+
+    child.on('error', (err) => {
+      console.error('Error playing audio:', err.message);
+      isSpeaking = false;
+      resolve();
+    });
+
+    child.on('close', () => {
+      isSpeaking = false;
+      resolve();
+    });
+  });
 }
 
 async function handleCommand(text: string) {
