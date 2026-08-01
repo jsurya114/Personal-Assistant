@@ -59,48 +59,55 @@ export class GroqProvider extends BaseAIProvider {
         },
       };
     } catch (sdkError: any) {
-      logger.warn('[GROQ] Vercel SDK chat error, falling back to direct REST API:', sdkError?.message || sdkError);
+      logger.warn(`[GROQ] Primary model attempt error: ${sdkError?.message || sdkError}`);
       
-      // Fallback: Direct Groq OpenAI-compatible REST API
-      try {
-        const payloadMessages = [
-          { role: 'system', content: systemMsg },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ];
+      // Fallback: Direct Groq OpenAI-compatible REST API (try llama-3.3-70b then llama-3.1-8b-instant)
+      const modelsToTry = [this.model, 'llama-3.1-8b-instant'];
+      let lastError: any;
 
-        const response = await axios.post(
-          `${GROQ_BASE_URL}/chat/completions`,
-          {
-            model: this.model,
-            messages: payloadMessages,
-            temperature: 0.7,
-            max_tokens: 2048,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${key}`,
-              'Content-Type': 'application/json',
+      for (const model of modelsToTry) {
+        try {
+          const payloadMessages = [
+            { role: 'system', content: systemMsg },
+            ...messages.map((m) => ({ role: m.role, content: m.content })),
+          ];
+
+          const response = await axios.post(
+            `${GROQ_BASE_URL}/chat/completions`,
+            {
+              model,
+              messages: payloadMessages,
+              temperature: 0.7,
+              max_tokens: 2048,
             },
-            timeout: 30000,
-          }
-        );
+            {
+              headers: {
+                Authorization: `Bearer ${key}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 30000,
+            }
+          );
 
-        const content = response.data.choices[0]?.message?.content ?? '';
-        const usage = response.data.usage;
+          const content = response.data.choices[0]?.message?.content ?? '';
+          const usage = response.data.usage;
 
-        return {
-          content,
-          model: this.model,
-          usage: {
-            promptTokens: usage?.prompt_tokens ?? 0,
-            completionTokens: usage?.completion_tokens ?? 0,
-            totalTokens: usage?.total_tokens ?? 0,
-          },
-        };
-      } catch (directError) {
-        logger.error('Groq direct REST API chat error:', directError);
-        throw directError;
+          return {
+            content,
+            model,
+            usage: {
+              promptTokens: usage?.prompt_tokens ?? 0,
+              completionTokens: usage?.completion_tokens ?? 0,
+              totalTokens: usage?.total_tokens ?? 0,
+            },
+          };
+        } catch (err: any) {
+          lastError = err;
+          logger.warn(`[GROQ] Model ${model} REST attempt failed: ${err?.message || err}`);
+        }
       }
+
+      throw lastError;
     }
   }
 
@@ -131,9 +138,9 @@ export class GroqProvider extends BaseAIProvider {
       }
 
       return { content: fullContent, model: this.model };
-    } catch (error) {
+    } catch (error: any) {
       // Fallback to chat if stream fails
-      logger.warn('[GROQ] Stream error, falling back to chat:', error);
+      logger.warn(`[GROQ] Stream error: ${error?.message || error}, falling back to chat`);
       const res = await this.chat(messages, systemPrompt);
       onChunk?.(res.content);
       return res;

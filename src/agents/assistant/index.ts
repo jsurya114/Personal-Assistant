@@ -249,16 +249,37 @@ export class UltronAssistant {
     memoryManager.addMessage(conversationId, userMessage);
     memoryManager.saveMessage(conversationId, userMessage);
 
-    let responseContent: string;
+    let responseContent = '';
+    const fallbackProviders: AIProvider[] = [
+      this.provider,
+      new GeminiProvider(),
+      new OpenAIProvider(),
+      new ClaudeProvider(),
+    ].filter((p, index, self) => p.isAvailable() && self.findIndex((s) => s.name === p.name) === index);
 
-    if (stream) {
-      const result = await this.provider.stream(messages, systemPrompt, (chunk) => {
-        process.stdout.write(chunk);
-      });
-      responseContent = result.content;
-    } else {
-      const result = await this.provider.chat(messages, systemPrompt);
-      responseContent = result.content;
+    let lastError: any;
+    for (const prov of fallbackProviders) {
+      try {
+        if (stream && prov.stream) {
+          const result = await prov.stream(messages, systemPrompt, (chunk) => {
+            process.stdout.write(chunk);
+          });
+          responseContent = result.content;
+        } else {
+          const result = await prov.chat(messages, systemPrompt);
+          responseContent = result.content;
+        }
+        if (responseContent && responseContent.trim().length > 0) {
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        logger.warn(`[ULTRON] Provider ${prov.name} attempt failed: ${err?.message || err}. Attempting fallback provider...`);
+      }
+    }
+
+    if (!responseContent || responseContent.trim().length === 0) {
+      responseContent = `Boss, I encountered a temporary AI API error: ${lastError?.message || 'Rate limit'}. Please ask again.`;
     }
 
     const assistantMessage: ChatMessage = { role: 'assistant', content: responseContent };
