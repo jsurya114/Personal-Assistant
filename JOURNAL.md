@@ -683,9 +683,14 @@ memory/
 - Committed all 60 project files (`feat: initial commit for Ultron AI Personal Assistant`).
 - Pushed successfully to `origin main`.
 
+#### 🛡️ 4. Voice Engine TTS Sanitization (`src/voice.ts`)
+- Replaced shell-interpolated `execAsync('say ...')` with direct `spawn('say', [cleanText])`, completely eliminating `/bin/sh` syntax errors when text contains backticks or quotes.
+- Added `cleanTextForSpeech()` to strip markdown headings, bullet points, asterisks, and code blocks before feeding into macOS speech synthesizer.
+
 #### 🛡️ Verification
 - Ran `npx tsc --noEmit` — 0 errors.
 - Verified live command execution: tested both `Buddy, what is my git status?` and `Buddy, push my code to git` — both executed and reported live git outputs accurately.
+- Pushed updates cleanly to `https://github.com/jsurya114/Personal-Assistant.git`.
 
 ---
 
