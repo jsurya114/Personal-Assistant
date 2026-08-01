@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Environment
+.env
+
+# Database & Memory
+memory/
+logs/
+storage/
+
+# Resume (personal file)
+resume/resume.pdf
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# TypeScript cache
+*.tsbuildinfo

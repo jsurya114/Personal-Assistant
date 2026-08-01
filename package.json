@@ -1,0 +1,51 @@
+{
+  "name": "ultron",
+  "version": "1.0.0",
+  "description": "Ultron — Personal AI Operating Assistant",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "dev:watch": "nodemon --exec ts-node server.ts",
+    "voice": "tsx src/voice.ts",
+    "start:bg": "pm2 start ecosystem.config.js",
+    "stop:bg": "pm2 stop ecosystem.config.js",
+    "restart:bg": "pm2 restart ecosystem.config.js",
+    "status:bg": "pm2 status",
+    "logs:bg": "pm2 logs",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.26",
+    "@ai-sdk/google": "^4.0.30",
+    "@ai-sdk/openai": "^4.0.26",
+    "@types/pdf-parse": "^1.1.5",
+    "ai": "^7.0.45",
+    "axios": "^1.7.2",
+    "better-sqlite3": "^11.0.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.31.2",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.62.1",
+    "socket.io": "^4.8.3",
+    "winston": "^3.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.11",
+    "@types/node-cron": "^3.0.11",
+    "drizzle-kit": "^0.22.8",
+    "nodemon": "^3.1.4",
+    "pm2": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.1",
+    "typescript": "^5.5.3"
+  }
+}
