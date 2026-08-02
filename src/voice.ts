@@ -29,29 +29,15 @@ function cleanTextForSpeech(raw: string): string {
     .trim();
 }
 
-// ─── Split text into short speakable sentences ────────────────────────────────
-function splitIntoSentences(text: string): string[] {
-  // Split on . ! ? and also on commas for extra responsiveness
-  const parts = text
-    .split(/(?<=[.!?])\s+/)   // split after sentence-ending punctuation
-    .map(s => s.trim())
-    .filter(s => s.length > 1);
-
-  // If no splits found (one long sentence), split at ~60 char word boundaries
-  if (parts.length <= 1 && text.length > 80) {
-    const chunks: string[] = [];
-    let remaining = text;
-    while (remaining.length > 80) {
-      const cutAt = remaining.lastIndexOf(' ', 80);
-      if (cutAt < 20) break;
-      chunks.push(remaining.slice(0, cutAt).trim());
-      remaining = remaining.slice(cutAt + 1).trim();
-    }
-    if (remaining.length > 0) chunks.push(remaining);
-    return chunks.length > 0 ? chunks : parts;
+// ─── Split text into small word-groups for near-instant interruptibility ──────
+function splitIntoChunks(text: string): string[] {
+  const WORDS_PER_CHUNK = 4; // speak 4 words at a time → interrupt latency < 1s
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
+    chunks.push(words.slice(i, i + WORDS_PER_CHUNK).join(' '));
   }
-
-  return parts;
+  return chunks;
 }
 
 // ─── Speak a single chunk synchronously ──────────────────────────────────────
@@ -101,11 +87,11 @@ export async function speak(text: string): Promise<void> {
   emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
   emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
 
-  const sentences = splitIntoSentences(clean);
+  const chunks = splitIntoChunks(clean);
 
-  for (const sentence of sentences) {
+  for (const chunk of chunks) {
     if (interrupted) break;   // Boss interrupted — stop immediately
-    await speakChunk(sentence);
+    await speakChunk(chunk);
   }
 
   // Only mark idle if we weren't interrupted in the middle
