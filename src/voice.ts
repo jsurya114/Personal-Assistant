@@ -171,11 +171,11 @@ export function startVoiceDaemon(): void {
           const text = payload.text ?? '';
 
           if (isSpeaking) {
-            // Boss said ANYTHING while Buddy is speaking → stop at next sentence boundary
+            // Boss said something while Buddy is speaking → stop immediately
             console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
             stopSpeaking();
             // Small delay to let SIGKILL settle, then acknowledge
-            setTimeout(() => speak("Go ahead Boss, I am listening."), 300);
+            setTimeout(() => speak("Go ahead Boss, I am listening."), 400);
 
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);

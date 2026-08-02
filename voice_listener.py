@@ -28,8 +28,9 @@ def is_buddy_speaking() -> bool:
 # This fires in < 200ms with no API call needed.
 # energy_threshold is calibrated at startup from ambient noise.
 # ─────────────────────────────────────────────────────────────────────────────
-ENERGY_MULTIPLIER = 2.5   # Boss's voice must be this many times louder than ambient
-energy_threshold  = 600   # default; overridden after calibration
+ENERGY_MULTIPLIER    = 5.0   # Boss's voice must be 5x louder than ambient (filters speaker echo)
+energy_threshold     = 1200  # default; overridden after calibration
+interrupt_cooldown   = 0.0   # timestamp until which interrupts are suppressed
 
 def measure_rms(audio_data: sr.AudioData) -> float:
     raw = audio_data.get_raw_data()
@@ -49,8 +50,10 @@ def listen_continuously():
     sys.stderr.write("[STT] Calibrating microphone...\n")
     sys.stderr.flush()
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=1.0)
+        recognizer.adjust_for_ambient_noise(source, duration=1.5)
         energy_threshold = recognizer.energy_threshold * ENERGY_MULTIPLIER
+    # Clamp: never let threshold be so low that speaker echo triggers it
+    energy_threshold = max(energy_threshold, 900)
     sys.stderr.write(f"[STT] Energy threshold set to {energy_threshold:.0f}\n")
     sys.stderr.flush()
 
@@ -98,8 +101,9 @@ def listen_continuously():
             if is_buddy_speaking():
                 # ── INTERRUPT MODE ─────────────────────────────────────────
                 # Check raw audio energy — NO STT API call.
-                # If RMS exceeds threshold, Boss is definitely speaking.
-                if rms > energy_threshold:
+                # If RMS exceeds threshold AND we are not in cooldown, interrupt.
+                if rms > energy_threshold and now > interrupt_cooldown:
+                    interrupt_cooldown = now + 3.0   # suppress for 3s to avoid looping
                     sys.stderr.write(f"[INTERRUPT] RMS={rms:.0f} > threshold={energy_threshold:.0f}\n")
                     sys.stderr.flush()
                     print(json.dumps({"type": "command", "text": "interrupt"}), flush=True)
