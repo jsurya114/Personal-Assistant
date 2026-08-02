@@ -17,7 +17,7 @@ import axios from 'axios';
 
 export class GroqProvider extends BaseAIProvider {
   readonly name = 'Groq';
-  readonly model = 'llama-3.3-70b-versatile';
+  readonly model = 'llama-3.1-8b-instant';
 
   private getClient() {
     const key = config.ai.groqKey ?? '';

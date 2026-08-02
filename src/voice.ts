@@ -36,9 +36,6 @@ export function stopSpeaking() {
     } catch {}
     activeTtsProcess = null;
   }
-  try {
-    exec('killall say 2>/dev/null || true');
-  } catch {}
   isSpeaking = false;
   try {
     listenerProcess?.stdin?.write('SILENT\n');
