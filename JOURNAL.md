@@ -743,9 +743,23 @@ memory/
   - Buddy immediately terminates audio with SIGKILL and confirms: *"Okay Boss, I'm listening."*
 - Verified clean build with `npx tsc --noEmit` (0 errors) and pushed to GitHub `origin/main`.
 
+### Session 16 — 2026-08-03
+
+**AI Used:** Antigravity (Google DeepMind)
+**Account:** jayasuryas@...
+
+**What was done this session:**
+- **Fixed Speech Stutter & Gaps:** Removed the 4-word chunking loop (`splitIntoChunks`) that was repeatedly spawning and tearing down `say` processes with 2-3s pauses between words. Restored natural, continuous macOS speech synthesis.
+- **Fixed Microphone Stream Re-initialization:** Removed `with sr.Microphone() as source:` from inside the fast polling loop in `voice_listener.py`. Microphone is now opened once persistently, eliminating frame drops, CoreAudio resets, and audio loss.
+- **Instant Interrupt via Voice & Keyboard:**
+  - `stopSpeaking()` immediately terminates `say` process via SIGKILL and `killall say 2>/dev/null`.
+  - Added Terminal Keyboard Barge-In: Boss can hit `Enter` or `Space` in the terminal to immediately silence Buddy at any time.
+  - Added full command processing during interrupts so Boss can directly replace current speech with a new question.
+- Verified clean build with `npx tsc --noEmit` (0 errors) and pushed to GitHub `origin/main`.
+
 ---
 
-*Last updated: 2026-08-02 — Session 15*
+*Last updated: 2026-08-03 — Session 16*
 
 
 
