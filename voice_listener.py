@@ -19,9 +19,7 @@ COMMAND_KEYWORDS = [
 
 # Strict user interrupt words (only spoken when Boss wants to cut Buddy off)
 INTERRUPT_PATTERNS = [
-    r"\bwait\b", r"\bwait wait\b", r"\bstop\b", r"\bpause\b",
-    r"\bhold on\b", r"\bshut up\b", r"\bstop talking\b",
-    r"\bbe quiet\b", r"\bhush\b",
+    r"\b(wait|wait wait|stop|stop it|pause|hold on|shut up|stop talking|be quiet|hush|cancel|listen)\b",
 ]
 
 buddy_is_speaking = False
@@ -63,7 +61,10 @@ def listen_continuously():
     while True:
         try:
             with sr.Microphone() as source:
-                audio = recognizer.listen(source, phrase_time_limit=12, timeout=None)
+                # Fast chunking during speech so interrupts trigger immediately in < 1 second
+                phrase_limit = 2.5 if buddy_is_speaking else 10
+                recognizer.pause_threshold = 0.25 if buddy_is_speaking else 0.5
+                audio = recognizer.listen(source, phrase_time_limit=phrase_limit, timeout=None)
 
             text = recognizer.recognize_google(audio).strip().lower()
             if not text or len(text) < 2:

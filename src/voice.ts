@@ -142,24 +142,21 @@ export function startVoiceDaemon() {
           console.log(`⚡ [Interrupt]: Boss spoke ("${payload.text}")`);
           stopSpeaking();
           
-          const isPureInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|listen to me|shut up|hush|quiet|hey buddy)$/i.test(payload.text.trim());
-          if (isPureInterrupt) {
-            speak("Okay Boss, I'm listening. What do you need?");
+          const hasCommandWords = /(search|find|list|show|open|check|jobs|weather|news|email|mail|remember)/i.test(payload.text);
+          if (!hasCommandWords) {
+            speak("Okay Boss, I'm listening.");
           } else {
             handleCommand(payload.text);
           }
         } else if (payload.type === 'command') {
           if (isSpeaking) {
-            const isInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|shut up|quiet|hey buddy)/i.test(payload.text.trim());
-            if (isInterrupt) {
-              console.log(`⚡ [Interrupt]: Boss interrupted Buddy ("${payload.text}")`);
-              stopSpeaking();
-              const isPureInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|listen to me|shut up|hush|quiet|hey buddy)$/i.test(payload.text.trim());
-              if (isPureInterrupt) {
-                speak("Okay Boss, I'm listening. What do you need?");
-              } else {
-                handleCommand(payload.text);
-              }
+            console.log(`⚡ [Interrupt]: Boss interrupted Buddy ("${payload.text}")`);
+            stopSpeaking();
+            const hasCommandWords = /(search|find|list|show|open|check|jobs|weather|news|email|mail|remember)/i.test(payload.text);
+            if (!hasCommandWords) {
+              speak("Okay Boss, I'm listening.");
+            } else {
+              handleCommand(payload.text);
             }
           } else if (!isProcessing) {
             handleCommand(payload.text);
