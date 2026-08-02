@@ -17,8 +17,7 @@ COMMAND_KEYWORDS = [
 ]
 
 INTERRUPT_KEYWORDS = [
-    "wait", "wait wait", "stop", "pause", "hold on", "hold on buddy",
-    "listen", "listen to me", "hush", "shut up", "cut it", "hang on",
+    "stop talking", "shut up", "hold on buddy", "stop speaking", "be quiet", "pause speech", "wait wait wait",
 ]
 
 def listen_continuously():

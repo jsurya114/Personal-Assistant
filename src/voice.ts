@@ -79,12 +79,9 @@ export function speak(text: string): Promise<void> {
 }
 
 async function handleCommand(text: string) {
-  // If Boss interrupts while speaking, stop audio immediately!
-  stopSpeaking();
-
   if (isProcessing) {
-    // If already generating, allow new command to take precedence
-    isProcessing = false;
+    // If Buddy is currently computing the answer, avoid double-processing chatter
+    return;
   }
 
   isProcessing = true;
@@ -96,11 +93,13 @@ async function handleCommand(text: string) {
     emitToDashboard('VOICE_USER_SPEAKING', { text });
     emitToDashboard('VOICE_STATUS', { state: 'thinking', text });
     
-    // Auto-focus dashboard UI on screen
-    popUltronDashboard();
+    // ONLY open dashboard if Boss explicitly asks for it
+    if (/(open|show|launch)\s+(dashboard|browser|ui|app|window)/i.test(text)) {
+      popUltronDashboard();
+    }
 
     // Check for quick interrupt / pause request
-    const isWaitRequest = /^(wait|wait wait|hold on|pause|listen|listen to me|hang on|stop)$/i.test(text.trim());
+    const isWaitRequest = /^(wait|wait wait|hold on|pause|listen to me|hang on|stop)$/i.test(text.trim());
     if (isWaitRequest) {
       await speak("Okay Boss, I'm listening. What do you need?");
       return;
