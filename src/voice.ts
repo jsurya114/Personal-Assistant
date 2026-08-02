@@ -230,7 +230,7 @@ export function startVoiceDaemon(): void {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
           console.log('💡 Tip: Speak naturally or press Enter in terminal to interrupt at any time.\n');
           emitToDashboard('VOICE_STATUS', { state: 'ready' });
-          speak('Hi Boss. Ultron is online and listening. Just speak naturally.');
+          speak("Hey Boss, what's up?");
 
         } else if (payload.type === 'command' || payload.type === 'transcript') {
           const text = (payload.text ?? '').trim();
