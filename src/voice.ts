@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { UltronAssistant } from './agents/assistant';
@@ -12,6 +13,20 @@ let isProcessing = false;
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 let listenerProcess: ReturnType<typeof spawn> | null = null;
 let currentlySpeakingText = '';
+
+const SPEAKING_FLAG = '/tmp/ultron_buddy_speaking';
+
+function setSpeakingFlag(speaking: boolean): void {
+  try {
+    if (speaking) {
+      writeFileSync(SPEAKING_FLAG, '1');
+    } else if (existsSync(SPEAKING_FLAG)) {
+      unlinkSync(SPEAKING_FLAG);
+    }
+  } catch {
+    // Ignore fs cleanup errors
+  }
+}
 
 // ─── Text cleaner for TTS ────────────────────────────────────────────────────
 function cleanTextForSpeech(raw: string): string {
@@ -62,6 +77,7 @@ function isSpeakerEcho(heardText: string): boolean {
 export function stopSpeaking(): void {
   isSpeaking = false;
   currentlySpeakingText = '';
+  setSpeakingFlag(false);
   if (activeTtsProcess) {
     try {
       activeTtsProcess.kill('SIGKILL');
@@ -90,12 +106,15 @@ export function speak(text: string): Promise<void> {
     if (!clean) {
       isSpeaking = false;
       currentlySpeakingText = '';
+      setSpeakingFlag(false);
       resolve();
       return;
     }
 
     isSpeaking = true;
     currentlySpeakingText = clean;
+    setSpeakingFlag(true);
+
     console.log(`\n🎙️ [Buddy]: ${text}\n`);
     emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
     emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
@@ -108,6 +127,7 @@ export function speak(text: string): Promise<void> {
         activeTtsProcess = null;
         isSpeaking = false;
         currentlySpeakingText = '';
+        setSpeakingFlag(false);
         emitToDashboard('VOICE_STATUS', { state: 'idle' });
       }
       resolve();
@@ -119,6 +139,7 @@ export function speak(text: string): Promise<void> {
         activeTtsProcess = null;
         isSpeaking = false;
         currentlySpeakingText = '';
+        setSpeakingFlag(false);
         emitToDashboard('VOICE_STATUS', { state: 'idle' });
       }
       resolve();

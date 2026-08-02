@@ -2,6 +2,12 @@ import speech_recognition as sr
 import json
 import sys
 import time
+import os
+
+SPEAKING_FLAG = '/tmp/ultron_buddy_speaking'
+
+def is_buddy_speaking() -> bool:
+    return os.path.exists(SPEAKING_FLAG)
 
 # Command keywords — implicit activation when Boss speaks
 COMMAND_KEYWORDS = [
@@ -19,8 +25,6 @@ COMMAND_KEYWORDS = [
 def listen_continuously():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold = 0.5
-    recognizer.non_speaking_duration = 0.3
 
     sys.stderr.write("[STT] Initializing microphone...\n")
     sys.stderr.flush()
@@ -39,8 +43,16 @@ def listen_continuously():
 
         while True:
             try:
-                # Fast 3.5s phrase chunk limit for quick turnaround on commands & interrupts
-                audio = recognizer.listen(source, phrase_time_limit=3.5, timeout=None)
+                if is_buddy_speaking():
+                    # INTERRUPT MODE: fast response to catch "stop" / "wait"
+                    recognizer.pause_threshold = 0.4
+                    recognizer.non_speaking_duration = 0.2
+                    audio = recognizer.listen(source, phrase_time_limit=2.5, timeout=None)
+                else:
+                    # NORMAL COMMAND MODE: generous timing so full sentences like "check my latest mail" never get cut off
+                    recognizer.pause_threshold = 0.9
+                    recognizer.non_speaking_duration = 0.5
+                    audio = recognizer.listen(source, phrase_time_limit=12.0, timeout=None)
 
                 text = recognizer.recognize_google(audio).strip().lower()
                 if not text or len(text) < 2:
