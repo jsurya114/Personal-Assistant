@@ -26,7 +26,15 @@ function cleanTextForSpeech(rawText: string): string {
     .trim();
 }
 
+let activeTtsProcess: ReturnType<typeof spawn> | null = null;
+
 export function stopSpeaking() {
+  if (activeTtsProcess) {
+    try {
+      activeTtsProcess.kill('SIGKILL');
+    } catch {}
+    activeTtsProcess = null;
+  }
   try {
     exec('killall say 2>/dev/null || true');
   } catch {}
@@ -34,28 +42,40 @@ export function stopSpeaking() {
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
-// Simple TTS wrapper for macOS
-export async function speak(text: string): Promise<void> {
-  isSpeaking = true;
-  console.log(`\n🎙️ [Buddy]: ${text}\n`);
-  
-  const clean = cleanTextForSpeech(text);
-  if (!clean) {
-    isSpeaking = false;
-    return;
-  }
+// Simple TTS wrapper for macOS with instant interrupt support
+export function speak(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    stopSpeaking();
 
-  emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
-  emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
+    const clean = cleanTextForSpeech(text);
+    if (!clean) {
+      isSpeaking = false;
+      return resolve();
+    }
 
-  try {
-    await execAsync(`say "${clean}"`);
-  } catch (error: any) {
-    console.error('Error playing audio:', error?.message || error);
-  } finally {
-    isSpeaking = false;
-    emitToDashboard('VOICE_STATUS', { state: 'idle' });
-  }
+    isSpeaking = true;
+    console.log(`\n🎙️ [Buddy]: ${text}\n`);
+
+    emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
+    emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
+
+    activeTtsProcess = spawn('say', [clean]);
+
+    activeTtsProcess.on('error', (err) => {
+      console.error('Error playing audio:', err.message);
+      isSpeaking = false;
+      activeTtsProcess = null;
+      emitToDashboard('VOICE_STATUS', { state: 'idle' });
+      resolve();
+    });
+
+    activeTtsProcess.on('close', () => {
+      isSpeaking = false;
+      activeTtsProcess = null;
+      emitToDashboard('VOICE_STATUS', { state: 'idle' });
+      resolve();
+    });
+  });
 }
 
 async function handleCommand(text: string) {
@@ -106,13 +126,31 @@ export function startVoiceDaemon() {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
           emitToDashboard('VOICE_STATUS', { state: 'ready' });
           speak('Hi Boss. Ultron is online and listening. Just speak naturally.');
-        } else if (payload.type === 'command') {
-          if (isProcessing) {
-            console.log(`⏳ [Queued]: "${payload.text}" (still processing previous command)`);
-          } else if (!isSpeaking) {
-            handleCommand(payload.text);
+        } else if (payload.type === 'interrupt') {
+          console.log(`⚡ [Interrupt]: Boss spoke ("${payload.text}")`);
+          stopSpeaking();
+          
+          const isPureInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|listen to me|shut up|hush|quiet|hey buddy)$/i.test(payload.text.trim());
+          if (isPureInterrupt) {
+            speak("Okay Boss, I'm listening. What do you need?");
           } else {
-            console.log(`⏳ [Queued]: "${payload.text}" (Buddy is speaking)`);
+            handleCommand(payload.text);
+          }
+        } else if (payload.type === 'command') {
+          if (isSpeaking) {
+            const isInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|shut up|quiet|hey buddy)/i.test(payload.text.trim());
+            if (isInterrupt) {
+              console.log(`⚡ [Interrupt]: Boss interrupted Buddy ("${payload.text}")`);
+              stopSpeaking();
+              const isPureInterrupt = /^(wait|wait wait|stop|pause|hold on|listen|listen to me|shut up|hush|quiet|hey buddy)$/i.test(payload.text.trim());
+              if (isPureInterrupt) {
+                speak("Okay Boss, I'm listening. What do you need?");
+              } else {
+                handleCommand(payload.text);
+              }
+            }
+          } else if (!isProcessing) {
+            handleCommand(payload.text);
           }
         } else if (payload.type === 'deactivate') {
           console.log(`😴 [Buddy]: Going quiet. Say "Buddy" or any command to wake me up.`);

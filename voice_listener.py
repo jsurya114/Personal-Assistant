@@ -3,6 +3,8 @@ import json
 import sys
 import time
 
+import re
+
 # Command keywords — if speech contains ANY of these, treat as a command
 # even without wake word. Boss is talking to Ultron, not random chatter.
 COMMAND_KEYWORDS = [
@@ -16,9 +18,17 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
-INTERRUPT_KEYWORDS = [
-    "stop talking", "shut up", "hold on buddy", "stop speaking", "be quiet", "pause speech", "wait wait wait",
+INTERRUPT_PATTERNS = [
+    r"\bwait\b", r"\bwait wait\b", r"\bstop\b", r"\bpause\b",
+    r"\bhold on\b", r"\bshut up\b", r"\bstop talking\b",
+    r"\blisten to me\b", r"\bquiet\b", r"\bhush\b",
 ]
+
+def is_interrupt_phrase(text: str) -> bool:
+    for pattern in INTERRUPT_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
 
 def listen_continuously():
     recognizer = sr.Recognizer()
@@ -47,8 +57,7 @@ def listen_continuously():
             now = time.time()
 
             # Immediate Interrupt Check (Barge-In)
-            is_interrupt = any(kw in text for kw in INTERRUPT_KEYWORDS)
-            if is_interrupt:
+            if is_interrupt_phrase(text):
                 active_until = now + 60
                 print(json.dumps({"type": "interrupt", "text": text}), flush=True)
                 continue
