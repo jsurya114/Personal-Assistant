@@ -61,8 +61,13 @@ export class GroqProvider extends BaseAIProvider {
     } catch (sdkError: any) {
       logger.warn(`[GROQ] Primary model attempt error: ${sdkError?.message || sdkError}`);
       
-      // Fallback: Direct Groq OpenAI-compatible REST API (try llama-3.3-70b then llama-3.1-8b-instant)
-      const modelsToTry = [this.model, 'llama-3.1-8b-instant'];
+      // Fallback: Direct Groq REST API across multiple models
+      const modelsToTry = [
+        'llama-3.1-8b-instant',
+        'mixtral-8x7b-32768',
+        'gemma2-9b-it',
+        this.model,
+      ];
       let lastError: any;
 
       for (const model of modelsToTry) {
@@ -78,32 +83,33 @@ export class GroqProvider extends BaseAIProvider {
               model,
               messages: payloadMessages,
               temperature: 0.7,
-              max_tokens: 2048,
+              max_tokens: 1024,
             },
             {
               headers: {
                 Authorization: `Bearer ${key}`,
                 'Content-Type': 'application/json',
               },
-              timeout: 30000,
+              timeout: 20000,
             }
           );
 
           const content = response.data.choices[0]?.message?.content ?? '';
-          const usage = response.data.usage;
-
-          return {
-            content,
-            model,
-            usage: {
-              promptTokens: usage?.prompt_tokens ?? 0,
-              completionTokens: usage?.completion_tokens ?? 0,
-              totalTokens: usage?.total_tokens ?? 0,
-            },
-          };
+          if (content && content.trim().length > 0) {
+            const usage = response.data.usage;
+            return {
+              content,
+              model,
+              usage: {
+                promptTokens: usage?.prompt_tokens ?? 0,
+                completionTokens: usage?.completion_tokens ?? 0,
+                totalTokens: usage?.total_tokens ?? 0,
+              },
+            };
+          }
         } catch (err: any) {
           lastError = err;
-          logger.warn(`[GROQ] Model ${model} REST attempt failed: ${err?.message || err}`);
+          logger.debug(`[GROQ] Model ${model} attempt failed: ${err?.message || err}`);
         }
       }
 
