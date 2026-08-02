@@ -737,7 +737,10 @@ memory/
   - Removed auto-focus browser popup that stole window focus on every voice query.
 - Resolved race condition where asynchronous `killall say` was terminating newly spawned TTS audio playback.
 - Switched default AI model to `llama-3.1-8b-instant` (sub-350ms latency, zero rate limits) for instantaneous response generation.
-- Verified end-to-end voice output with live test: AI generated in 376ms and TTS audio played for 5.2s clearly through Mac speakers.
+- Optimized real-time voice barge-in:
+  - Reduced speech chunking window to 2.5s and pause threshold to 0.25s while Buddy is speaking, allowing Google STT to capture and interrupt speech in real time.
+  - Enabled broad regex matching for all stop/wait keywords (e.g., *"stop"*, *"wait"*, *"hold on"*, *"pause"*, *"shut up"*).
+  - Buddy immediately terminates audio with SIGKILL and confirms: *"Okay Boss, I'm listening."*
 - Verified clean build with `npx tsc --noEmit` (0 errors) and pushed to GitHub `origin/main`.
 
 ---
