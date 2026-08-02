@@ -3,8 +3,12 @@ import json
 import sys
 import time
 import os
+import audioop
 
-# Command keywords — implicit activation when Boss speaks
+# Flag file written by Node.js to signal Buddy is speaking
+SPEAKING_FLAG = '/tmp/ultron_buddy_speaking'
+
+# Command keywords — implicit activation when Boss speaks  
 COMMAND_KEYWORDS = [
     "search", "find", "list", "show", "get", "open", "check",
     "jobs", "job", "linkedin", "indeed", "resume", "apply",
@@ -16,89 +20,109 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
-# Flag file written by Node.js to signal Buddy is speaking
-SPEAKING_FLAG = '/tmp/ultron_buddy_speaking'
-
 def is_buddy_speaking() -> bool:
     return os.path.exists(SPEAKING_FLAG)
 
-# ─── Chunk-buffering command assembler ────────────────────────────────────────
-# Strategy:
-#   - Always use short phrase_time_limit=2s → listen loop never blocks long
-#   - When Buddy is NOT speaking: buffer incoming chunks; flush as one command
-#     after FLUSH_TIMEOUT seconds of silence between chunks
-#   - When Buddy IS speaking: any incoming speech = immediate interrupt signal
-# ──────────────────────────────────────────────────────────────────────────────
-FLUSH_TIMEOUT = 1.2    # seconds of silence between chunks before flushing buffer
-PHRASE_LIMIT  = 2.5    # max seconds per chunk — short so loop stays responsive
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERRUPT DETECTION — uses raw audio energy (RMS), NOT Google STT
+# This fires in < 200ms with no API call needed.
+# energy_threshold is calibrated at startup from ambient noise.
+# ─────────────────────────────────────────────────────────────────────────────
+ENERGY_MULTIPLIER = 2.5   # Boss's voice must be this many times louder than ambient
+energy_threshold  = 600   # default; overridden after calibration
+
+def measure_rms(audio_data: sr.AudioData) -> float:
+    raw = audio_data.get_raw_data()
+    if len(raw) < 2:
+        return 0.0
+    return audioop.rms(raw, 2)
 
 def listen_continuously():
-    recognizer = sr.Recognizer()
-    recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold    = 0.6   # silence inside a chunk to mark end
-    recognizer.non_speaking_duration = 0.3
+    global energy_threshold
 
-    # Calibrate for ambient noise once
+    recognizer = sr.Recognizer()
+    recognizer.dynamic_energy_threshold = False   # we manage threshold ourselves
+    recognizer.pause_threshold    = 0.8
+    recognizer.non_speaking_duration = 0.4
+
+    # ── Calibrate ambient noise ────────────────────────────────────────────
+    sys.stderr.write("[STT] Calibrating microphone...\n")
+    sys.stderr.flush()
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.8)
+        recognizer.adjust_for_ambient_noise(source, duration=1.0)
+        energy_threshold = recognizer.energy_threshold * ENERGY_MULTIPLIER
+    sys.stderr.write(f"[STT] Energy threshold set to {energy_threshold:.0f}\n")
+    sys.stderr.flush()
 
     print(json.dumps({"status": "ready"}), flush=True)
 
     # Start ACTIVE immediately for 3 minutes
     active_until = time.time() + 180
 
-    # Buffer for assembling multi-chunk commands
+    # Buffer for assembling multi-chunk commands while Buddy is silent
     buffer: list[str] = []
     last_chunk_at: float = 0.0
+    FLUSH_TIMEOUT = 1.5   # seconds of silence → flush buffer as full command
 
     while True:
-        # ── Flush buffer if enough silence has passed ──────────────────────
         now = time.time()
+
+        # ── Flush buffer if silence elapsed ───────────────────────────────
         if buffer and (now - last_chunk_at) >= FLUSH_TIMEOUT:
             full_text = ' '.join(buffer).strip()
             buffer = []
             last_chunk_at = 0.0
 
-            if full_text:
+            if full_text and not is_buddy_speaking():
                 is_wake = any(w in full_text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])
-                is_command_phrase = any(kw in full_text for kw in COMMAND_KEYWORDS)
+                is_cmd  = any(kw in full_text for kw in COMMAND_KEYWORDS)
 
                 if any(w in full_text for w in ["stop listening", "go to sleep", "bye buddy", "bye ultron"]):
                     active_until = 0
                     print(json.dumps({"type": "deactivate", "text": full_text}), flush=True)
-                elif is_wake or now < active_until or is_command_phrase:
+                elif is_wake or now < active_until or is_cmd:
                     active_until = now + 60
                     print(json.dumps({"type": "command", "text": full_text}), flush=True)
                 else:
                     print(json.dumps({"type": "transcript", "text": full_text}), flush=True)
 
-        # ── Listen for next short audio chunk ──────────────────────────────
+        # ── Capture a short audio chunk ───────────────────────────────────
         try:
             with sr.Microphone() as source:
-                audio = recognizer.listen(source, phrase_time_limit=PHRASE_LIMIT, timeout=None)
-
-            text = recognizer.recognize_google(audio).strip().lower()
-            if not text or len(text) < 2:
-                continue
+                # Short 1.5s window so we loop fast and check flags often
+                audio = recognizer.listen(source, phrase_time_limit=1.5, timeout=None)
 
             now = time.time()
+            rms = measure_rms(audio)
 
             if is_buddy_speaking():
-                # ── INTERRUPT MODE: Buddy is speaking ──────────────────────
-                # Any speech from Boss = immediate interrupt — no buffering
-                print(json.dumps({"type": "command", "text": text}), flush=True)
-                # Clear buffer so leftover chunks don't replay after interrupt
-                buffer = []
-                last_chunk_at = 0.0
+                # ── INTERRUPT MODE ─────────────────────────────────────────
+                # Check raw audio energy — NO STT API call.
+                # If RMS exceeds threshold, Boss is definitely speaking.
+                if rms > energy_threshold:
+                    sys.stderr.write(f"[INTERRUPT] RMS={rms:.0f} > threshold={energy_threshold:.0f}\n")
+                    sys.stderr.flush()
+                    print(json.dumps({"type": "command", "text": "interrupt"}), flush=True)
+                    buffer = []
+                    last_chunk_at = 0.0
+                # Ignore low-energy sounds (background noise / speaker echo)
+
             else:
-                # ── NORMAL MODE: Add chunk to buffer ──────────────────────
-                buffer.append(text)
-                last_chunk_at = now
+                # ── NORMAL COMMAND MODE ────────────────────────────────────
+                # Only send to STT if the energy suggests real speech
+                if rms > (energy_threshold / ENERGY_MULTIPLIER):
+                    try:
+                        text = recognizer.recognize_google(audio).strip().lower()
+                        if text and len(text) >= 2:
+                            buffer.append(text)
+                            last_chunk_at = now
+                    except sr.UnknownValueError:
+                        pass
+                    except sr.RequestError as e:
+                        print(json.dumps({"type": "error", "message": f"STT error: {e}"}), flush=True)
 
         except sr.UnknownValueError:
-            pass   # silence or unrecognized audio
-        except sr.RequestError as e:
-            print(json.dumps({"type": "error", "message": f"Speech API error: {e}"}), flush=True)
+            pass
         except Exception:
             pass
 
