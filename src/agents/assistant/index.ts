@@ -21,6 +21,7 @@ import { parseResumeFolder } from '../../services/resumeParser';
 import { config } from '../../config';
 import { emitToDashboard } from '../../services/socket';
 import { gitService } from '../../services/git';
+import { liveSearchService } from '../../services/liveSearch';
 
 // ---- Intent Detection ----
 
@@ -29,7 +30,13 @@ function detectIntent(message: string): AgentType {
 
   const jobKeywords = ['job', 'apply', 'resume', 'application', 'career', 'interview', 'linkedin', 'salary', 'hire', 'position', 'opening'];
   const codeKeywords = ['code', 'debug', 'fix', 'build', 'write', 'function', 'bug', 'error', 'api', 'typescript', 'javascript', 'python', 'program', 'refactor', 'implement', 'git', 'push', 'pull', 'commit', 'branch', 'repo'];
-  const researchKeywords = ['research', 'news', 'what is', 'explain', 'how does', 'find out', 'search', 'look up', 'latest', 'trending', 'ai news', 'tech news'];
+  const researchKeywords = [
+    'research', 'news', 'sports', 'cricket', 'football', 'match', 'score',
+    'politics', 'election', 'minister', 'government', 'local', 'neighborhood',
+    'chennai', 'india', 'today', 'happening', 'what is', 'explain', 'how does',
+    'find out', 'search', 'look up', 'latest', 'trending', 'ai news', 'tech news',
+    'who won', 'what happened', 'current', 'score'
+  ];
 
   if (jobKeywords.some((k) => lower.includes(k))) return 'hunter';
   if (codeKeywords.some((k) => lower.includes(k))) return 'cipher';
@@ -241,7 +248,26 @@ export class UltronAssistant {
       }
     }
 
-    const systemPrompt = SYSTEM_PROMPTS[agentType] + memoryManager.buildMemoryContext() + jobContext;
+    // If live news / sports / politics / neighborhood / web search intent
+    if (
+      agentType === 'research' ||
+      /(news|sports|cricket|football|match|score|politics|election|minister|government|chennai|local|neighborhood|happening|who won|latest update|today's news|weather)/i.test(lowerMessage)
+    ) {
+      try {
+        logAgent('RESEARCH', `Fetching real-time web & news data for: "${message}"`);
+        const searchResults = await liveSearchService.searchNews(message);
+        if (searchResults.length > 0) {
+          jobContext += `\n\n[REAL-TIME LIVE NEWS & WEB SEARCH RESULTS (Current Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})]:\n` +
+            searchResults.map((r, i) => `${i + 1}. **${r.title}** (${r.source || 'Live News'}, ${r.date || 'Today'})\n   Details: ${r.snippet}\n   URL: ${r.url}`).join('\n') +
+            `\n\nIMPORTANT: Use these REAL-TIME, UP-TO-DATE search results from today (${new Date().getFullYear()}) to answer Boss accurately. Provide current, fresh details and never use outdated historical information.`;
+        }
+      } catch (err: any) {
+        logger.warn(`Live search in assistant failed: ${err.message}`);
+      }
+    }
+
+    const currentDateContext = `\n\n[SYSTEM CLOCK]: Current Local Time is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}, ${new Date().toLocaleTimeString()}. Always answer with reference to the year ${new Date().getFullYear()}.`;
+    const systemPrompt = SYSTEM_PROMPTS[agentType] + currentDateContext + memoryManager.buildMemoryContext() + jobContext;
     const history = memoryManager.getContext(conversationId);
     const messages: ChatMessage[] = [...history, userMessage];
 

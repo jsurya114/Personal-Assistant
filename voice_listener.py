@@ -16,31 +16,43 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
+INTERRUPT_KEYWORDS = [
+    "wait", "wait wait", "stop", "pause", "hold on", "hold on buddy",
+    "listen", "listen to me", "hush", "shut up", "cut it", "hang on",
+]
+
 def listen_continuously():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold = 0.7
-    recognizer.non_speaking_duration = 0.4
+    recognizer.pause_threshold = 0.5
+    recognizer.non_speaking_duration = 0.3
 
     # Adjust for ambient noise
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.8)
+        recognizer.adjust_for_ambient_noise(source, duration=0.6)
 
     print(json.dumps({"status": "ready"}), flush=True)
 
     # Start ACTIVE immediately — Boss launched voice mode, so he wants to talk
-    active_until = time.time() + 120  # 2 minutes of active listening on startup
+    active_until = time.time() + 180  # 3 minutes of active listening on startup
 
     while True:
         try:
             with sr.Microphone() as source:
-                audio = recognizer.listen(source, phrase_time_limit=15, timeout=None)
+                audio = recognizer.listen(source, phrase_time_limit=12, timeout=None)
 
             text = recognizer.recognize_google(audio).strip().lower()
             if not text or len(text) < 2:
                 continue
 
             now = time.time()
+
+            # Immediate Interrupt Check (Barge-In)
+            is_interrupt = any(kw in text for kw in INTERRUPT_KEYWORDS)
+            if is_interrupt:
+                active_until = now + 60
+                print(json.dumps({"type": "interrupt", "text": text}), flush=True)
+                continue
 
             # Wake words — explicit activation
             is_wake = any(w in text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])

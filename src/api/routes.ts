@@ -232,6 +232,43 @@ router.post('/git/remote', async (req: Request, res: Response) => {
   }
 });
 
+// ---- Voice & Interruption ----
+import { stopSpeaking } from '../voice';
+import { autoApplyAgent } from '../agents/autoApply';
+import { liveSearchService } from '../services/liveSearch';
+
+router.post('/voice/interrupt', (_req: Request, res: Response) => {
+  stopSpeaking();
+  res.json({ success: true, message: 'Voice output halted' });
+});
+
+// ---- Auto Apply ----
+router.post('/auto-apply', async (req: Request, res: Response) => {
+  try {
+    const { query, location, limit, dryRun } = req.body;
+    const results = await autoApplyAgent.runLinkedInEasyApply({
+      query: query || 'Backend Developer Node.js',
+      location: location || 'India',
+      limit: Number(limit) || 3,
+      dryRun: dryRun !== false, // default to safe review mode
+    });
+    res.json({ success: true, count: results.length, applications: results });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Live Search & News ----
+router.get('/live-search', async (req: Request, res: Response) => {
+  try {
+    const query = String(req.query.q || '');
+    const results = await liveSearchService.searchNews(query);
+    res.json({ success: true, count: results.length, results });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ---- System ----
 
 router.get('/status', (_req: Request, res: Response) => {

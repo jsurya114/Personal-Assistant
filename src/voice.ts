@@ -1,12 +1,14 @@
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import path from 'path';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
 import { popUltronDashboard } from './utils/window';
+import { emitToDashboard } from './services/socket';
 
 let assistant: UltronAssistant;
 let isSpeaking = false;
 let isProcessing = false;
+let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 
 function cleanTextForSpeech(rawText: string): string {
   return rawText
@@ -23,9 +25,28 @@ function cleanTextForSpeech(rawText: string): string {
     .trim();
 }
 
-// Safe TTS wrapper for macOS using direct process invocation
-function speak(text: string): Promise<void> {
+/**
+ * Instantly cuts off audio playback when Boss speaks / interrupts
+ */
+export function stopSpeaking() {
+  if (activeTtsProcess) {
+    try {
+      activeTtsProcess.kill('SIGKILL');
+    } catch {}
+    activeTtsProcess = null;
+  }
+  try {
+    exec('killall say 2>/dev/null || true');
+  } catch {}
+  isSpeaking = false;
+  emitToDashboard('VOICE_STATUS', { state: 'listening', message: 'Interrupted by Boss' });
+}
+
+// Safe TTS wrapper for macOS with instant interrupt support
+export function speak(text: string): Promise<void> {
   return new Promise((resolve) => {
+    stopSpeaking(); // stop any prior speech
+
     isSpeaking = true;
     console.log(`\n🎙️ [Buddy]: ${text}\n`);
 
@@ -35,30 +56,55 @@ function speak(text: string): Promise<void> {
       return resolve();
     }
 
-    const child = spawn('say', [clean]);
+    emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
+    emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
 
-    child.on('error', (err) => {
+    activeTtsProcess = spawn('say', [clean]);
+
+    activeTtsProcess.on('error', (err) => {
       console.error('Error playing audio:', err.message);
       isSpeaking = false;
+      activeTtsProcess = null;
+      emitToDashboard('VOICE_STATUS', { state: 'idle' });
       resolve();
     });
 
-    child.on('close', () => {
+    activeTtsProcess.on('close', () => {
       isSpeaking = false;
+      activeTtsProcess = null;
+      emitToDashboard('VOICE_STATUS', { state: 'idle' });
       resolve();
     });
   });
 }
 
 async function handleCommand(text: string) {
-  if (isProcessing) return; // Prevent overlapping requests
+  // If Boss interrupts while speaking, stop audio immediately!
+  stopSpeaking();
+
+  if (isProcessing) {
+    // If already generating, allow new command to take precedence
+    isProcessing = false;
+  }
+
   isProcessing = true;
 
   try {
     console.log(`\n🗣️ [Boss]: ${text}`);
     
+    // Broadcast user speech to UI
+    emitToDashboard('VOICE_USER_SPEAKING', { text });
+    emitToDashboard('VOICE_STATUS', { state: 'thinking', text });
+    
     // Auto-focus dashboard UI on screen
     popUltronDashboard();
+
+    // Check for quick interrupt / pause request
+    const isWaitRequest = /^(wait|wait wait|hold on|pause|listen|listen to me|hang on|stop)$/i.test(text.trim());
+    if (isWaitRequest) {
+      await speak("Okay Boss, I'm listening. What do you need?");
+      return;
+    }
 
     if (!assistant) {
       assistant = new UltronAssistant();
@@ -80,7 +126,7 @@ async function handleCommand(text: string) {
   }
 }
 
-function startVoiceDaemon() {
+export function startVoiceDaemon() {
   console.log('🤖 Initializing Ultron Voice Engine...');
   
   const pythonExecutable = path.resolve(__dirname, '../.venv/bin/python');
@@ -89,7 +135,6 @@ function startVoiceDaemon() {
   const child = spawn(pythonExecutable, [listenerScript]);
 
   child.stdout.on('data', (data) => {
-    // Python might flush multiple JSON lines at once
     const lines = data.toString().split('\n').filter((l: string) => l.trim().length > 0);
     
     for (const line of lines) {
@@ -98,25 +143,29 @@ function startVoiceDaemon() {
         
         if (payload.status === 'ready') {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
+          emitToDashboard('VOICE_STATUS', { state: 'ready' });
           speak('Hi Boss. Ultron is online and listening. Just speak naturally.');
+        } else if (payload.type === 'interrupt') {
+          console.log(`⚡ [Interrupt]: Boss spoke ("${payload.text}")`);
+          stopSpeaking();
+          handleCommand(payload.text);
         } else if (payload.type === 'command') {
-          if (isProcessing) {
-            console.log(`⏳ [Queued]: "${payload.text}" (still processing previous command)`);
-          } else if (!isSpeaking) {
-            handleCommand(payload.text);
-          } else {
-            console.log(`⏳ [Queued]: "${payload.text}" (Buddy is still speaking)`);
+          if (isSpeaking) {
+            console.log(`⚡ [Barge-In]: Interrupting Buddy for new command: "${payload.text}"`);
+            stopSpeaking();
           }
+          handleCommand(payload.text);
         } else if (payload.type === 'deactivate') {
           console.log(`😴 [Buddy]: Going quiet. Say "Buddy" or any command to wake me up.`);
+          emitToDashboard('VOICE_STATUS', { state: 'sleeping' });
         } else if (payload.type === 'transcript') {
           console.log(`👂 [Ambient]: "${payload.text}"`);
+          emitToDashboard('VOICE_AMBIENT', { text: payload.text });
         } else if (payload.type === 'error') {
           console.error(`⚠️ [STT Warning]: ${payload.message}`);
         }
       } catch (e) {
-        // Not JSON, maybe a debug print from python
-        console.log('[Python STT Debug]:', line);
+        // Debug print
       }
     }
   });
@@ -131,13 +180,16 @@ function startVoiceDaemon() {
   });
 }
 
-// Start the Daemon
-(async () => {
-  try {
-    await initDatabase();
-    assistant = new UltronAssistant();
-    startVoiceDaemon();
-  } catch (error) {
-    console.error('Failed to start Voice Engine:', error);
-  }
-})();
+// Start the Daemon if run directly
+if (require.main === module) {
+  (async () => {
+    try {
+      await initDatabase();
+      assistant = new UltronAssistant();
+      startVoiceDaemon();
+    } catch (error) {
+      console.error('Failed to start Voice Engine:', error);
+    }
+  })();
+}
+

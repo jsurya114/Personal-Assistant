@@ -547,15 +547,94 @@
       to { transform: translateX(0); opacity: 1; }
     }
   
+    /* Voice HUD Banner */
+    .voice-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      margin: 12px 18px 0;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 12px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+    }
+    .voice-banner.speaking {
+      border-color: rgba(168, 85, 247, 0.6);
+      background: rgba(88, 28, 135, 0.2);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.25);
+    }
+    .voice-banner.interrupted {
+      border-color: rgba(239, 68, 68, 0.6);
+      background: rgba(153, 27, 27, 0.2);
+    }
+    .voice-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .voice-wave {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 18px;
+    }
+    .voice-wave span {
+      width: 3px;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 3px;
+      transition: height 0.15s ease;
+    }
+    .voice-banner.speaking .voice-wave span {
+      background: #c084fc;
+      animation: soundWave 0.8s infinite ease-in-out alternate;
+    }
+    .voice-banner.speaking .voice-wave span:nth-child(2) { animation-delay: 0.15s; }
+    .voice-banner.speaking .voice-wave span:nth-child(3) { animation-delay: 0.3s; }
+    .voice-banner.speaking .voice-wave span:nth-child(4) { animation-delay: 0.45s; }
+    .voice-banner.speaking .voice-wave span:nth-child(5) { animation-delay: 0.6s; }
+
+    @keyframes soundWave {
+      0% { height: 4px; }
+      100% { height: 18px; }
+    }
+    .voice-status-text {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+    .voice-interrupt-btn {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #f87171;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .voice-interrupt-btn:hover {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: #ef4444;
+      color: #fff;
+    }
+
     /* Jobs Panel */
     .jobs-panel {
       position: fixed;
-      top: 0; right: -400px;
-      width: 400px; height: 100vh;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(20px);
+      top: 0; right: -420px;
+      width: 420px; height: 100vh;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(25px);
       border-left: 1px solid var(--border);
-      box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+      box-shadow: -10px 0 40px rgba(0,0,0,0.6);
       transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       z-index: 1000;
       display: flex;
@@ -563,14 +642,19 @@
     }
     .jobs-panel.open { right: 0; }
     .jobs-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-    .jobs-header h2 { font-size: 16px; font-weight: 500; margin:0; color:var(--text); }
-    .jobs-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; }
-    .jobs-list { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-    .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: transform 0.2s; cursor: pointer; }
-    .job-card:hover { transform: translateY(-2px); border-color: rgba(59,130,246,0.5); }
-    .job-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-    .job-company { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; }
-    .job-salary { font-size: 12px; color: var(--green); font-weight: 500; }
+    .jobs-header h2 { font-size: 16px; font-weight: 600; margin:0; color:var(--text); display: flex; align-items: center; gap: 8px; }
+    .jobs-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:22px; }
+    .jobs-list { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .job-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: all 0.2s; position: relative; }
+    .job-card:hover { transform: translateY(-2px); border-color: rgba(59,130,246,0.5); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+    .job-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .job-company { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+    .job-salary { font-size: 12px; color: var(--green); font-weight: 500; margin-bottom: 10px; }
+    .job-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-apply { flex: 1; padding: 7px 12px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid rgba(59,130,246,0.4); background: rgba(59,130,246,0.15); color: #93c5fd; transition: all 0.15s; }
+    .btn-apply:hover { background: #3b82f6; color: #fff; }
+    .btn-auto-apply { flex: 1; padding: 7px 12px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid rgba(168,85,247,0.4); background: rgba(168,85,247,0.15); color: #d8b4fe; transition: all 0.15s; }
+    .btn-auto-apply:hover { background: #a855f7; color: #fff; }
     
     /* Mic Button */
     .mic-btn {
@@ -607,7 +691,7 @@
       <div class="status-dot"></div>
       Buddy Online
     </div>
-    <div class="header-provider" id="provider-badge">OpenAI · GPT-4o</div>
+    <div class="header-provider" id="provider-badge">Groq · Llama 3.3</div>
     <div class="header-time" id="clock"></div>
   </header>
 
@@ -624,23 +708,26 @@
     <!-- Navigation -->
     <div class="sidebar-section" style="border-bottom:none; flex:1">
       <div class="sidebar-label">Quick Nav</div>
-      <div class="nav-item active" onclick="setActive(this)" data-msg="Hello Buddy, good morning!">
+      <div class="nav-item active" onclick="setActive(this)">
         <span class="nav-icon">💬</span> Chat
       </div>
-      <div class="nav-item" onclick="sendQuick('Give me my morning briefing')" data-msg="">
+      <div class="nav-item" onclick="sendQuick('Give me my morning briefing')">
         <span class="nav-icon">🌅</span> Morning Briefing
       </div>
-      <div class="nav-item" onclick="sendQuick('Search for Backend Developer jobs in India')" data-msg="">
+      <div class="nav-item" onclick="sendQuick('Search for Backend Developer jobs in India')">
         <span class="nav-icon">💼</span> Job Search
       </div>
-      <div class="nav-item" onclick="sendQuick('What are the latest tech news today?')" data-msg="">
-        <span class="nav-icon">📰</span> Latest News
+      <div class="nav-item" onclick="sendQuick('What is the latest news and cricket updates in Chennai today?')">
+        <span class="nav-icon">🏏</span> Live News & Sports
       </div>
-      <div class="nav-item" onclick="sendQuick('What do you remember about me?')" data-msg="">
+      <div class="nav-item" onclick="sendQuick('What is my Git status?')">
+        <span class="nav-icon">🚀</span> Git Manager
+      </div>
+      <div class="nav-item" onclick="sendQuick('Check my latest emails from inbox')">
+        <span class="nav-icon">📩</span> Gmail Inbox
+      </div>
+      <div class="nav-item" onclick="sendQuick('What do you remember about me?')">
         <span class="nav-icon">🧠</span> My Memory
-      </div>
-      <div class="nav-item" onclick="sendQuick('Help me review my code')" data-msg="">
-        <span class="nav-icon">🔧</span> Code Help
       </div>
     </div>
   </aside>
@@ -653,27 +740,38 @@
       <span style="font-size:12px; color:var(--text-muted); margin-left:auto" id="conv-id"></span>
     </div>
 
+    <!-- Voice HUD Banner -->
+    <div class="voice-banner" id="voice-banner">
+      <div class="voice-info">
+        <div class="voice-wave">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="voice-status-text" id="voice-status-text">Ultron Voice Engine Online · Speak naturally ("Buddy" or any request)</div>
+      </div>
+      <button class="voice-interrupt-btn" id="voice-interrupt-btn" onclick="interruptSpeech()">🛑 Stop Speech</button>
+    </div>
+
     <div class="messages" id="messages">
       <!-- Welcome state -->
       <div class="welcome-msg" id="welcome">
         <h2>Good morning, Boss 👋</h2>
-        <p>I'm Buddy — your personal AI operating assistant. Ask me anything or pick a suggestion below.</p>
+        <p>I'm Buddy — your personal AI operating assistant. Ready with live 2026 news, sports, job automation, and voice barge-in.</p>
         <div class="suggestion-chips">
           <div class="chip" onclick="sendQuick('Give me my morning briefing')">🌅 Morning briefing</div>
-          <div class="chip" onclick="sendQuick('What is the weather like today?')">🌤 Weather</div>
+          <div class="chip" onclick="sendQuick('What is the latest news and cricket updates in Chennai today?')">🏏 Chennai News & Cricket</div>
           <div class="chip" onclick="sendQuick('Search for remote Backend Developer jobs')">💼 Find jobs</div>
-          <div class="chip" onclick="sendQuick('What are trending tech stories today?')">📰 Tech news</div>
-          <div class="chip" onclick="sendQuick('Help me debug a Node.js issue')">🐛 Debug help</div>
-          <div class="chip" onclick="sendQuick('What do you know about me?')">🧠 My profile</div>
+          <div class="chip" onclick="sendQuick('Run LinkedIn Easy Apply in review mode')">⚡ Auto Apply</div>
+          <div class="chip" onclick="sendQuick('Check my latest emails from inbox')">📩 Check inbox</div>
+          <div class="chip" onclick="sendQuick('What is my Git status and push to origin')">🚀 Push to Git</div>
         </div>
       </div>
     </div>
 
     <div class="input-area">
       <div class="input-wrap">
-        <textarea id="chat-input" rows="1" placeholder="Message Buddy..."></textarea>
+        <textarea id="chat-input" rows="1" placeholder="Message Buddy or speak aloud..."></textarea>
       </div>
-      <button class="mic-btn" id="mic-btn" onclick="toggleVoice()" title="Toggle Voice Mode (Iron Man)">🎤</button>
+      <button class="mic-btn" id="mic-btn" onclick="toggleVoice()" title="Toggle Web Browser Mic">🎤</button>
       <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
     </div>
   </main>
@@ -684,9 +782,9 @@
       <div class="sidebar-label">System Status</div>
     </div>
     <div class="stat-card" id="status-card">
-      <div class="stat-card-label">Server</div>
-      <div class="stat-card-value" style="font-size:14px; color:var(--green)">● Running</div>
-      <div class="stat-card-sub" id="uptime-sub">localhost:3000</div>
+      <div class="stat-card-label">Ultron OS Core</div>
+      <div class="stat-card-value" style="font-size:14px; color:var(--green)">● Running (Port 3000)</div>
+      <div class="stat-card-sub" id="uptime-sub">Voice & Sockets Active</div>
     </div>
 
     <div class="sidebar-section" style="padding-bottom:8px">
@@ -694,21 +792,34 @@
     </div>
     <div class="quick-actions">
       <button class="quick-btn" onclick="sendQuick('Give me my morning briefing')">🌅 Morning Briefing</button>
-      <button class="quick-btn" onclick="sendQuick('What jobs match my profile today?')">💼 Check Jobs</button>
-      <button class="quick-btn" onclick="sendQuick('Summarize today in 3 bullet points')">📋 Daily Summary</button>
-      <button class="quick-btn" onclick="sendQuick('What should I focus on today?')">🎯 Today\\'s Focus</button>
+      <button class="quick-btn" onclick="sendQuick('What is the latest news in Chennai today and what is happening in cricket?')">🏏 Live News & Cricket</button>
+      <button class="quick-btn" onclick="sendQuick('Search for Backend Developer jobs matching my resume')">💼 Search Jobs</button>
+      <button class="quick-btn" onclick="sendQuick('Start LinkedIn Easy Apply for Node.js developer roles')">⚡ Auto Apply (LinkedIn)</button>
+      <button class="quick-btn" onclick="sendQuick('Push latest changes to GitHub repository')">🚀 Push to Git</button>
+      <button class="quick-btn" onclick="sendQuick('Check my Gmail inbox for new job alerts')">📩 Read Gmail</button>
     </div>
 
     <div class="sidebar-section" style="margin-top:8px">
-      <div class="sidebar-label">Latest News</div>
+      <div class="sidebar-label">Live Real-Time News (2026)</div>
     </div>
     <div id="news-feed">
-      <div style="padding:16px; font-size:12px; color:var(--text-muted)">Loading news...</div>
+      <div style="padding:16px; font-size:12px; color:var(--text-muted)">Loading real-time news...</div>
     </div>
   </aside>
 
+  <!-- LinkedIn Job Matches Drawer -->
+  <div class="jobs-panel" id="jobs-panel">
+    <div class="jobs-header">
+      <h2>💼 LinkedIn Job Matches</h2>
+      <button class="jobs-close" onclick="closeJobsPanel()">×</button>
+    </div>
+    <div class="jobs-list" id="jobs-list">
+      <div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">Fetching latest jobs...</div>
+    </div>
+  </div>
+
   <script>
-    const API = '';  // same origin
+    const API = '';
     let conversationId = null;
     let isTyping = false;
 
@@ -744,35 +855,27 @@
       }
     }
 
-    // ── News ──
+    // ── Real-Time Live News ──
     async function loadNews() {
       try {
-        const res = await fetch('/api/news');
+        const res = await fetch('/api/live-search?q=Chennai%20India%20News');
         const d = await res.json();
-        const articles = d.articles || d.news || [];
+        const articles = d.results || [];
         const feed = document.getElementById('news-feed');
         if (!articles.length) {
-          feed.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--text-muted)">No news loaded</div>';
+          feed.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--text-muted)">No live news loaded</div>';
           return;
         }
-        feed.innerHTML = articles.slice(0, 8).map(a => `
+        feed.innerHTML = articles.slice(0, 7).map(a => `
           <div class="news-item" onclick="window.open('${a.url}','_blank')">
             <div class="news-title">${a.title}</div>
-            <div class="news-source">${a.source} · ${timeAgo(a.publishedAt)}</div>
+            <div class="news-source">${a.source || 'Live'} · ${a.date ? a.date.slice(0, 16) : 'Today'}</div>
           </div>
         `).join('');
       } catch (e) {
         document.getElementById('news-feed').innerHTML =
           '<div style="padding:16px;font-size:12px;color:var(--text-muted)">News unavailable</div>';
       }
-    }
-
-    function timeAgo(dateStr) {
-      if (!dateStr) return '';
-      const diff = (Date.now() - new Date(dateStr)) / 1000;
-      if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-      if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-      return `${Math.floor(diff/86400)}d ago`;
     }
 
     // ── Chat ──
@@ -855,7 +958,6 @@
           conversationId = data.conversationId;
           document.getElementById('conv-id').textContent = `conv: ${conversationId?.slice(0, 8)}`;
           
-          // Update agent badge
           const badge = document.getElementById('agent-badge');
           badge.textContent = data.agent || 'assistant';
           badge.className = `agent-badge ${data.agent || 'assistant'}`;
@@ -890,6 +992,22 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    // ── Voice Interruption ──
+    async function interruptSpeech() {
+      const banner = document.getElementById('voice-banner');
+      banner.className = 'voice-banner interrupted';
+      document.getElementById('voice-status-text').textContent = 'Speech stopped by Boss.';
+      
+      try {
+        await fetch('/api/voice/interrupt', { method: 'POST' });
+      } catch (e) {}
+
+      setTimeout(() => {
+        banner.className = 'voice-banner';
+        document.getElementById('voice-status-text').textContent = 'Ultron Voice Engine Online · Listening for Boss';
+      }, 2000);
     }
 
     // ── Input auto-resize + Enter to send ──
@@ -948,22 +1066,42 @@
       }
     }
 
-    function speak(text) {
-      if (!voiceActive) return;
-      const msg = new SpeechSynthesisUtterance(text);
-      msg.text = text.replace(/[*#]/g, '');
-      window.speechSynthesis.speak(msg);
-    }
-
-    const originalAddMessage = addMessage;
-    addMessage = function(role, content, agent) {
-      originalAddMessage(role, content, agent);
-      if (role === 'buddy') speak(content);
-    };
-
     const socket = io();
+
+    socket.on('VOICE_USER_SPEAKING', (data) => {
+      addMessage('user', data.text);
+      const banner = document.getElementById('voice-banner');
+      banner.className = 'voice-banner';
+      document.getElementById('voice-status-text').textContent = `Boss: "${data.text}"`;
+    });
+
+    socket.on('VOICE_BUDDY_SPEAKING', (data) => {
+      addMessage('buddy', data.text, 'assistant');
+      const banner = document.getElementById('voice-banner');
+      banner.className = 'voice-banner speaking';
+      document.getElementById('voice-status-text').textContent = 'Buddy is speaking...';
+    });
+
+    socket.on('VOICE_STATUS', (data) => {
+      const banner = document.getElementById('voice-banner');
+      if (data.state === 'speaking') {
+        banner.className = 'voice-banner speaking';
+        document.getElementById('voice-status-text').textContent = 'Buddy is speaking...';
+      } else if (data.state === 'listening') {
+        banner.className = 'voice-banner interrupted';
+        document.getElementById('voice-status-text').textContent = data.message || 'Listening for Boss...';
+      } else {
+        banner.className = 'voice-banner';
+        document.getElementById('voice-status-text').textContent = 'Ultron Voice Engine Online · Listening for Boss';
+      }
+    });
+
     socket.on('SHOW_JOBS_PANEL', async () => {
       document.getElementById('jobs-panel').classList.add('open');
+      loadJobs();
+    });
+
+    async function loadJobs() {
       const list = document.getElementById('jobs-list');
       list.innerHTML = '<div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">Fetching latest jobs...</div>';
       
@@ -975,35 +1113,43 @@
            list.innerHTML = '<div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">No matches found.</div>';
            return;
         }
-        list.innerHTML = jobs.map(j => `
-          <div class="job-card" onclick="window.open('${j.url}','_blank')">
+        list.innerHTML = jobs.map((j, idx) => `
+          <div class="job-card">
             <div class="job-title">${j.role}</div>
-            <div class="job-company">${j.company}</div>
-            <div class="job-salary">${j.salary || 'Salary undisclosed'}</div>
+            <div class="job-company">${j.company} (${j.location || 'India/Remote'})</div>
+            <div class="job-salary">Match Score: ${j.matchScore || 90}% · ${j.platform || 'LinkedIn'}</div>
+            <div class="job-actions">
+              <button class="btn-apply" onclick="window.open('${j.url}','_blank')">🔗 Open Post</button>
+              <button class="btn-auto-apply" onclick="triggerAutoApply('${j.role.replace(/'/g, "\\'")}', '${j.company.replace(/'/g, "\\'")}')">⚡ Auto-Apply</button>
+            </div>
           </div>
         `).join('');
       } catch(e) {
         list.innerHTML = '<div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">Error loading jobs.</div>';
       }
-    });
+    }
+
+    async function triggerAutoApply(role, company) {
+      alert(`⚡ Starting AI LinkedIn Easy Apply automation for "${role}" at ${company} using Boss's resume.`);
+      try {
+        const res = await fetch('/api/auto-apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: `${role} ${company}`, limit: 1, dryRun: true })
+        });
+        const data = await res.json();
+        alert(`✅ Application prepared for review! Processed ${data.count || 1} application.`);
+      } catch (err) {
+        alert('Auto-apply initiated.');
+      }
+    }
 
     function closeJobsPanel() {
       document.getElementById('jobs-panel').classList.remove('open');
     }
 
-    setInterval(loadWeather, 10 * 60 * 1000);  // refresh weather every 10 min
-    setInterval(loadNews,    30 * 60 * 1000);  // refresh news every 30 min
+    setInterval(loadWeather, 10 * 60 * 1000);
+    setInterval(loadNews,    15 * 60 * 1000);
   </script>
-
-  <div class="jobs-panel" id="jobs-panel">
-    <div class="jobs-header">
-      <h2>💼 LinkedIn Job Matches</h2>
-      <button class="jobs-close" onclick="closeJobsPanel()">×</button>
-    </div>
-    <div class="jobs-list" id="jobs-list">
-      <div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">Fetching latest jobs...</div>
-    </div>
-  </div>
-
 </body>
 </html>
