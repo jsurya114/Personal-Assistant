@@ -2,11 +2,10 @@ import speech_recognition as sr
 import json
 import sys
 import time
-
 import re
+import threading
 
-# Command keywords — if speech contains ANY of these, treat as a command
-# even without wake word. Boss is talking to Ultron, not random chatter.
+# Command keywords — implicit activation when Boss speaks
 COMMAND_KEYWORDS = [
     "search", "find", "list", "show", "get", "open", "check",
     "jobs", "job", "linkedin", "indeed", "resume", "apply",
@@ -18,19 +17,35 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
+# Strict user interrupt words (only spoken when Boss wants to cut Buddy off)
 INTERRUPT_PATTERNS = [
     r"\bwait\b", r"\bwait wait\b", r"\bstop\b", r"\bpause\b",
     r"\bhold on\b", r"\bshut up\b", r"\bstop talking\b",
-    r"\blisten to me\b", r"\bquiet\b", r"\bhush\b",
+    r"\bbe quiet\b", r"\bhush\b",
 ]
 
-def is_interrupt_phrase(text: str) -> bool:
+buddy_is_speaking = False
+
+def stdin_listener():
+    global buddy_is_speaking
+    for line in sys.stdin:
+        cmd = line.strip()
+        if cmd == "SPEAKING":
+            buddy_is_speaking = True
+        elif cmd == "SILENT":
+            buddy_is_speaking = False
+
+# Run background thread to receive speaking state from Node.js
+threading.Thread(target=stdin_listener, daemon=True).start()
+
+def is_strict_interrupt(text: str) -> bool:
     for pattern in INTERRUPT_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return True
     return False
 
 def listen_continuously():
+    global buddy_is_speaking
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
     recognizer.pause_threshold = 0.5
@@ -42,8 +57,8 @@ def listen_continuously():
 
     print(json.dumps({"status": "ready"}), flush=True)
 
-    # Start ACTIVE immediately — Boss launched voice mode, so he wants to talk
-    active_until = time.time() + 180  # 3 minutes of active listening on startup
+    # Start ACTIVE immediately
+    active_until = time.time() + 180
 
     while True:
         try:
@@ -56,8 +71,17 @@ def listen_continuously():
 
             now = time.time()
 
-            # Immediate Interrupt Check (Barge-In)
-            if is_interrupt_phrase(text):
+            # If Buddy is currently speaking through the speakers:
+            if buddy_is_speaking:
+                # ONLY trigger if Boss explicitly tells Buddy to stop / wait
+                if is_strict_interrupt(text):
+                    active_until = now + 60
+                    print(json.dumps({"type": "interrupt", "text": text}), flush=True)
+                # Ignore self-echo and background chatter
+                continue
+
+            # If Buddy is NOT speaking (normal user input):
+            if is_strict_interrupt(text):
                 active_until = now + 60
                 print(json.dumps({"type": "interrupt", "text": text}), flush=True)
                 continue
@@ -65,34 +89,30 @@ def listen_continuously():
             # Wake words — explicit activation
             is_wake = any(w in text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])
 
-            # Command keywords — implicit activation (Boss is clearly talking to Ultron)
+            # Command keywords — implicit activation
             is_command_phrase = any(kw in text for kw in COMMAND_KEYWORDS)
 
             if is_wake:
-                # Explicit wake: extend conversation window to 60 seconds
                 active_until = now + 60
                 print(json.dumps({"type": "command", "text": text}), flush=True)
 
             elif now < active_until:
-                # Inside active conversation window
                 if any(w in text for w in ["stop listening", "go to sleep", "bye buddy", "bye ultron"]):
                     active_until = 0
                     print(json.dumps({"type": "deactivate", "text": text}), flush=True)
                 else:
-                    active_until = now + 60  # Keep extending
+                    active_until = now + 60
                     print(json.dumps({"type": "command", "text": text}), flush=True)
 
             elif is_command_phrase:
-                # No wake word, but it sounds like a command → activate and process
                 active_until = now + 60
                 print(json.dumps({"type": "command", "text": text}), flush=True)
 
             else:
-                # Truly ambient / unrelated speech
                 print(json.dumps({"type": "transcript", "text": text}), flush=True)
 
         except sr.UnknownValueError:
-            pass  # Silence or unrecognized
+            pass
         except sr.RequestError as e:
             print(json.dumps({"type": "error", "message": f"Speech API error: {e}"}), flush=True)
         except Exception:

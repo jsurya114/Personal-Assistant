@@ -27,6 +27,7 @@ function cleanTextForSpeech(rawText: string): string {
 }
 
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
+let listenerProcess: ReturnType<typeof spawn> | null = null;
 
 export function stopSpeaking() {
   if (activeTtsProcess) {
@@ -39,6 +40,9 @@ export function stopSpeaking() {
     exec('killall say 2>/dev/null || true');
   } catch {}
   isSpeaking = false;
+  try {
+    listenerProcess?.stdin?.write('SILENT\n');
+  } catch {}
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
@@ -59,12 +63,19 @@ export function speak(text: string): Promise<void> {
     emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
     emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
 
+    try {
+      listenerProcess?.stdin?.write('SPEAKING\n');
+    } catch {}
+
     activeTtsProcess = spawn('say', [clean]);
 
     activeTtsProcess.on('error', (err) => {
       console.error('Error playing audio:', err.message);
       isSpeaking = false;
       activeTtsProcess = null;
+      try {
+        listenerProcess?.stdin?.write('SILENT\n');
+      } catch {}
       emitToDashboard('VOICE_STATUS', { state: 'idle' });
       resolve();
     });
@@ -72,6 +83,9 @@ export function speak(text: string): Promise<void> {
     activeTtsProcess.on('close', () => {
       isSpeaking = false;
       activeTtsProcess = null;
+      try {
+        listenerProcess?.stdin?.write('SILENT\n');
+      } catch {}
       emitToDashboard('VOICE_STATUS', { state: 'idle' });
       resolve();
     });
@@ -114,6 +128,7 @@ export function startVoiceDaemon() {
   const listenerScript = path.resolve(__dirname, '../voice_listener.py');
 
   const child = spawn(pythonExecutable, [listenerScript]);
+  listenerProcess = child;
 
   child.stdout.on('data', (data) => {
     const lines = data.toString().split('\n').filter((l: string) => l.trim().length > 0);
