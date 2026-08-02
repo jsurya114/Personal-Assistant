@@ -150,16 +150,27 @@ export function startVoiceDaemon() {
           stopSpeaking();
           handleCommand(payload.text);
         } else if (payload.type === 'command') {
+          const lower = (payload.text || '').toLowerCase().trim();
+          const isExplicitInterrupt = /^(wait|wait wait|stop|pause|hold on|shut up|hush|listen|listen to me|buddy|ultron|hey buddy)/i.test(lower) ||
+            /(wait|stop speaking|shut up|pause speech|hold on)/i.test(lower);
+
           if (isSpeaking) {
-            console.log(`⚡ [Barge-In]: Interrupting Buddy for new command: "${payload.text}"`);
-            stopSpeaking();
+            if (isExplicitInterrupt) {
+              console.log(`⚡ [Barge-In]: Interrupting Buddy for Boss command: "${payload.text}"`);
+              stopSpeaking();
+              handleCommand(payload.text);
+            } else {
+              // Ignore speaker feedback / ambient noise while Buddy is talking
+              // so audio is not abruptly killed
+              return;
+            }
+          } else {
+            handleCommand(payload.text);
           }
-          handleCommand(payload.text);
         } else if (payload.type === 'deactivate') {
           console.log(`😴 [Buddy]: Going quiet. Say "Buddy" or any command to wake me up.`);
           emitToDashboard('VOICE_STATUS', { state: 'sleeping' });
         } else if (payload.type === 'transcript') {
-          console.log(`👂 [Ambient]: "${payload.text}"`);
           emitToDashboard('VOICE_AMBIENT', { text: payload.text });
         } else if (payload.type === 'error') {
           console.error(`⚠️ [STT Warning]: ${payload.message}`);

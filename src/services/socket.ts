@@ -25,6 +25,6 @@ export function emitToDashboard(event: string, data?: any) {
   if (io) {
     io.emit(event, data);
   } else {
-    logger.warn(`Tried to emit '${event}' but socket.io is not initialized`);
+    logger.debug(`Socket.io not active in this process; skipping '${event}' emit.`);
   }
 }
