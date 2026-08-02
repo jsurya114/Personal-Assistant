@@ -17,9 +17,9 @@ COMMAND_KEYWORDS = [
     "remember", "recall", "save", "forget",
     "help", "what", "how", "when", "where", "who", "why",
     "please", "can you", "could you", "tell me", "give me",
-    "dashboard", "browser", "email", "mail",
-    "good morning", "good night", "hello", "hi",
-    "stop", "wait", "hold on", "pause", "shut up", "quiet", "cancel", "listen"
+    "dashboard", "browser", "email", "mail", "inbox",
+    "good morning", "good night", "hello", "hi", "hey",
+    "stop", "wait", "hold on", "pause", "shut up", "quiet", "cancel", "listen", "silence", "enough"
 ]
 
 def listen_continuously():
@@ -33,7 +33,8 @@ def listen_continuously():
         sys.stderr.write("[STT] Calibrating for ambient noise...\n")
         sys.stderr.flush()
         recognizer.adjust_for_ambient_noise(source, duration=1.0)
-        sys.stderr.write(f"[STT] Ready. Energy threshold: {recognizer.energy_threshold:.0f}\n")
+        baseline_energy = max(recognizer.energy_threshold, 250)
+        sys.stderr.write(f"[STT] Ready. Baseline energy threshold: {baseline_energy:.0f}\n")
         sys.stderr.flush()
 
         print(json.dumps({"status": "ready"}), flush=True)
@@ -44,12 +45,15 @@ def listen_continuously():
         while True:
             try:
                 if is_buddy_speaking():
-                    # INTERRUPT MODE: fast response to catch "stop" / "wait"
-                    recognizer.pause_threshold = 0.4
-                    recognizer.non_speaking_duration = 0.2
-                    audio = recognizer.listen(source, phrase_time_limit=2.5, timeout=None)
+                    # INTERRUPT MODE: Fast & sensitive to catch even a single "stop" or "hold on"
+                    recognizer.dynamic_energy_threshold = False
+                    recognizer.energy_threshold = baseline_energy
+                    recognizer.pause_threshold = 0.3
+                    recognizer.non_speaking_duration = 0.15
+                    audio = recognizer.listen(source, phrase_time_limit=2.0, timeout=None)
                 else:
-                    # NORMAL COMMAND MODE: generous timing so full sentences like "check my latest mail" never get cut off
+                    # NORMAL COMMAND MODE: Generous timing for full sentences like "check my latest mail"
+                    recognizer.dynamic_energy_threshold = True
                     recognizer.pause_threshold = 0.9
                     recognizer.non_speaking_duration = 0.5
                     audio = recognizer.listen(source, phrase_time_limit=12.0, timeout=None)

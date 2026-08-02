@@ -62,11 +62,11 @@ function isSpeakerEcho(heardText: string): boolean {
   if (!heard || !speaking) return false;
 
   // Never consider explicit stop keywords as echo
-  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)\b/i.test(heard)) {
+  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|silence|enough)\b/i.test(heard)) {
     return false;
   }
 
-  // Direct substring match (e.g. "glassdoor" inside "glassdoor jobs...")
+  // Direct substring match
   if (speaking.includes(heard)) {
     return true;
   }
@@ -159,17 +159,28 @@ export function speak(text: string): Promise<void> {
 
 // ─── Handle a voice / text command from Boss ────────────────────────────────
 async function handleCommand(text: string): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  // Pure stop / silence commands — stop immediately and stay quiet without querying LLM
+  const isPureStop = /^\s*(stop|stop\s+stop|wait|hold\s+on|shut\s+up|quiet|pause|cancel|hush|silence|enough|never\s*mind)\s*$/i.test(trimmed);
+  if (isPureStop) {
+    console.log(`⚡ [Silence]: "${trimmed}" — staying quiet.`);
+    stopSpeaking();
+    return;
+  }
+
   if (isProcessing) return;
   isProcessing = true;
   try {
-    console.log(`\n🗣️ [Boss]: ${text}`);
-    emitToDashboard('VOICE_USER_SPEAKING', { text });
-    emitToDashboard('VOICE_STATUS', { state: 'thinking', text });
+    console.log(`\n🗣️ [Boss]: ${trimmed}`);
+    emitToDashboard('VOICE_USER_SPEAKING', { text: trimmed });
+    emitToDashboard('VOICE_STATUS', { state: 'thinking', text: trimmed });
 
     if (!assistant) assistant = new UltronAssistant();
 
     const response = await assistant.chat({
-      message: text,
+      message: trimmed,
       conversationId: 'terminal-voice'
     });
 
@@ -197,10 +208,7 @@ function setupTerminalInput(): void {
     if (isSpeaking) {
       console.log('⚡ [Interrupt via Terminal]');
       stopSpeaking();
-      if (!trimmed) {
-        speak('Go ahead Boss, I am listening.');
-        return;
-      }
+      if (!trimmed) return; // Silent interrupt on Enter
     }
     if (trimmed) {
       handleCommand(trimmed);
@@ -236,15 +244,14 @@ export function startVoiceDaemon(): void {
           const text = (payload.text ?? '').trim();
           if (!text) continue;
 
-          if (isSpeaking) {
-            // Broad match for any interruption phrase
-            const isExplicitStop = /\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)\b/i.test(text);
+          // Check for any stop / interrupt command
+          const isExplicitStop = /\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|silence|enough|buddy stop|buddy wait)\b/i.test(text);
 
+          if (isSpeaking) {
             if (isExplicitStop) {
-              console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
+              console.log(`⚡ [Interrupt]: "${text}" — stopping speech immediately.`);
               stopSpeaking();
-              speak('Go ahead Boss, I am listening.');
-              continue;
+              continue; // Do NOT speak back, stay quiet and ready for next command
             }
 
             // Check if this is just Buddy's speaker echo heard by the microphone
@@ -262,6 +269,11 @@ export function startVoiceDaemon(): void {
             }
 
           } else if (payload.type === 'command' && !isProcessing) {
+            if (isExplicitStop) {
+              console.log(`⚡ [Silence]: "${text}" — staying quiet.`);
+              stopSpeaking();
+              continue;
+            }
             handleCommand(text);
           }
 
