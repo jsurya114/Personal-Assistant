@@ -19,7 +19,7 @@ COMMAND_KEYWORDS = [
 def listen_continuously():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold = 0.6
+    recognizer.pause_threshold = 0.5
     recognizer.non_speaking_duration = 0.3
 
     sys.stderr.write("[STT] Initializing microphone...\n")
@@ -39,8 +39,8 @@ def listen_continuously():
 
         while True:
             try:
-                # Persistent audio stream — no audio frame drops or CoreAudio restarts
-                audio = recognizer.listen(source, phrase_time_limit=10, timeout=None)
+                # Fast 3.5s phrase chunk limit for quick turnaround on commands & interrupts
+                audio = recognizer.listen(source, phrase_time_limit=3.5, timeout=None)
 
                 text = recognizer.recognize_google(audio).strip().lower()
                 if not text or len(text) < 2:
@@ -65,7 +65,7 @@ def listen_continuously():
             except sr.RequestError as e:
                 print(json.dumps({"type": "error", "message": f"STT error: {e}"}), flush=True)
             except Exception as e:
-                time.sleep(0.1)
+                time.sleep(0.05)
 
 if __name__ == "__main__":
     try:

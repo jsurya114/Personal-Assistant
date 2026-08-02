@@ -40,6 +40,11 @@ function isSpeakerEcho(heardText: string): boolean {
 
   if (!heard || !speaking) return false;
 
+  // Never consider explicit stop keywords as echo
+  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush)\b/i.test(heard)) {
+    return false;
+  }
+
   // Direct substring match (e.g. "cristi" inside "cristiano ronaldo...")
   if (speaking.includes(heard)) {
     return true;
@@ -47,7 +52,7 @@ function isSpeakerEcho(heardText: string): boolean {
 
   // Word overlap ratio: if majority of heard words are in Buddy's speech, it's echo
   const heardWords = heard.split(/\s+/).filter((w) => w.length > 2);
-  if (heardWords.length === 0) return true; // short audio artifact
+  if (heardWords.length === 0) return true;
 
   const matchingWords = heardWords.filter((w) => speaking.includes(w));
   return matchingWords.length / heardWords.length >= 0.6;
@@ -201,8 +206,8 @@ export function startVoiceDaemon(): void {
           if (!text) continue;
 
           if (isSpeaking) {
-            // Check for explicit stop command from Boss
-            const isExplicitStop = /^(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)$/i.test(text);
+            // Broad match for any interruption phrase
+            const isExplicitStop = /\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)\b/i.test(text);
 
             if (isExplicitStop) {
               console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
