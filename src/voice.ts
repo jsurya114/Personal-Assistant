@@ -32,6 +32,7 @@ function setSpeakingFlag(speaking: boolean): void {
 function cleanTextForSpeech(raw: string): string {
   return raw
     .replace(/```[\s\S]*?```/g, 'code snippet.')
+    .replace(/<[^>]+>/g, '') // Strip email tags & XML like <noreply@...>
     .replace(/`([^`]+)`/g, '$1')
     .replace(/#{1,6}\s*/g, '')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -39,8 +40,13 @@ function cleanTextForSpeech(raw: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/^[-*+]\s+/gm, '')
     .replace(/[-_]{3,}/g, '')
+    .replace(/\|/g, ', ')
+    .replace(/\bFrom:\s*/gi, '')
+    .replace(/\bSubject:\s*/gi, '')
+    .replace(/\bDate:\s*/gi, '')
     .replace(/\n+/g, '. ')
-    .replace(/"/g, '')
+    .replace(/["']/g, '')
+    .replace(/[^\x20-\x7E]/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -56,21 +62,25 @@ function isSpeakerEcho(heardText: string): boolean {
   if (!heard || !speaking) return false;
 
   // Never consider explicit stop keywords as echo
-  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush)\b/i.test(heard)) {
+  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)\b/i.test(heard)) {
     return false;
   }
 
-  // Direct substring match (e.g. "cristi" inside "cristiano ronaldo...")
+  // Direct substring match (e.g. "glassdoor" inside "glassdoor jobs...")
   if (speaking.includes(heard)) {
     return true;
   }
 
-  // Word overlap ratio: if majority of heard words are in Buddy's speech, it's echo
   const heardWords = heard.split(/\s+/).filter((w) => w.length > 2);
   if (heardWords.length === 0) return true;
 
+  // If heard text is short (1-2 words) and any word matches what Buddy is saying, treat as echo
   const matchingWords = heardWords.filter((w) => speaking.includes(w));
-  return matchingWords.length / heardWords.length >= 0.6;
+  if (heardWords.length <= 2 && matchingWords.length > 0) {
+    return true;
+  }
+
+  return matchingWords.length / heardWords.length >= 0.5;
 }
 
 // ─── Stop any active TTS immediately ─────────────────────────────────────────
@@ -243,10 +253,13 @@ export function startVoiceDaemon(): void {
               continue;
             }
 
-            // Boss spoke a new question/command while Buddy was talking
-            console.log(`⚡ [Barge-In]: "${text}" — switching to new command.`);
-            stopSpeaking();
-            handleCommand(text);
+            // If heard text is more than 2 words and not echo, treat as real user barge-in
+            const words = text.split(/\s+/).filter((w) => w.length > 2);
+            if (words.length >= 2) {
+              console.log(`⚡ [Barge-In]: "${text}" — switching to new command.`);
+              stopSpeaking();
+              handleCommand(text);
+            }
 
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);

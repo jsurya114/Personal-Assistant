@@ -77,7 +77,7 @@ export const sentinelAgent = {
   /**
    * Retrieves recent inbox emails for the assistant to summarize
    */
-  async getRecentEmails(limit: number = 5): Promise<{ emails: EmailMessage[]; error?: string }> {
+  async getRecentEmails(limit: number = 10): Promise<{ emails: EmailMessage[]; error?: string }> {
     const { password, user } = config.email;
     if (!password) {
       return {

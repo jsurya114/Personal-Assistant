@@ -29,17 +29,40 @@ function decodeMimeHeader(raw: string): string {
       return text;
     });
 
-    // Clean common mojibake characters
     return cleaned
-      .replace(/â€™/g, "'")
-      .replace(/â€œ|â€/g, '"')
-      .replace(/âœ‰ï¸/g, '✉️')
-      .replace(/âï¸/g, '✉️')
+      .replace(/â€™|â€TM/g, "'")
+      .replace(/â€œ|â€|â€/g, '"')
+      .replace(/âœ‰ï¸|âï¸|âœ‰/g, '')
       .replace(/â/g, '')
       .trim();
   } catch {
     return raw.trim();
   }
+}
+
+function cleanSenderName(raw: string): string {
+  // Strip angle bracket emails: "Glassdoor Jobs <noreply@glassdoor.com>" -> "Glassdoor Jobs"
+  const angleMatch = raw.match(/^(.*?)\s*<.*?>/);
+  let name = angleMatch && angleMatch[1].trim() ? angleMatch[1].trim() : raw;
+
+  name = name.replace(/^["']|["']$/g, '').trim();
+
+  // If sender is just a raw email address (e.g. noreply@google.com), turn domain into clean name
+  if (name.includes('@')) {
+    const domainMatch = name.match(/@([^.]+)/);
+    if (domainMatch && domainMatch[1]) {
+      const brand = domainMatch[1];
+      name = brand.charAt(0).toUpperCase() + brand.slice(1);
+    }
+  }
+
+  // Simplify long corporate suffixes
+  name = name
+    .replace(/\s*-\s*Unified Cyber Assurance Platform.*/i, '')
+    .replace(/\s*\(Formally.*?\)/i, '')
+    .trim();
+
+  return name || 'Unknown Sender';
 }
 
 function formatEmailDate(rawDate: string): string {
@@ -63,7 +86,7 @@ function formatEmailDate(rawDate: string): string {
  * Lightweight IMAP reader using Node's standard TLS client.
  * Connects securely to imap.gmail.com:993
  */
-export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMessage[]> {
+export async function fetchRecentJobEmails(limit: number = 10): Promise<EmailMessage[]> {
   const { user, password, host, port } = config.email;
 
   if (!password) {
@@ -147,7 +170,8 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
             const rawSubject = subjectMatch ? subjectMatch[1].trim() : 'No Subject';
             const rawDate = dateMatch ? dateMatch[1].trim() : new Date().toISOString();
 
-            const from = decodeMimeHeader(rawFrom);
+            const decodedFrom = decodeMimeHeader(rawFrom);
+            const from = cleanSenderName(decodedFrom);
             const subject = decodeMimeHeader(rawSubject);
             const date = formatEmailDate(rawDate);
 
@@ -156,7 +180,7 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
               from,
               subject,
               date,
-              snippet: `Email regarding "${subject}" from ${from}`,
+              snippet: `${from}: ${subject}`,
             });
           }
         }
@@ -164,7 +188,7 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
         socket.write('A99 LOGOUT\r\n');
         socket.destroy();
         clearTimeout(timeout);
-        // Return most recent first
+        // Return newest first
         resolve(emails.reverse());
       }
     });

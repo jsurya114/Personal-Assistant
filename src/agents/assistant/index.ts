@@ -200,13 +200,16 @@ export class UltronAssistant {
     if (isEmailIntent) {
       try {
         logAgent('SENTINEL', `Checking real inbox for ${config.email.user}...`);
-        const inbox = await sentinelAgent.getRecentEmails(5);
+        const inbox = await sentinelAgent.getRecentEmails(10);
         if (inbox.error) {
           jobContext += `\n\n[GMAIL INBOX STATUS]: ${inbox.error}`;
         } else if (inbox.emails.length > 0) {
           jobContext += `\n\n[REAL LIVE EMAILS FROM BOSS'S INBOX (${config.email.user})]:\n` +
-            inbox.emails.map((e, i) => `${i+1}. From: ${e.from} | Subject: "${e.subject}" | Date: ${e.date}`).join('\n') +
-            `\n\nIMPORTANT: You have successfully connected to Boss's live Gmail inbox (${config.email.user}). These are 100% real live emails. Summarize these emails directly for Boss clearly and concisely.`;
+            inbox.emails.map((e, i) => `${i+1}. ${e.from}: ${e.subject}`).join('\n') +
+            `\n\nCRITICAL VOICE & EMAIL INSTRUCTIONS:
+- Present all ${inbox.emails.length} emails clearly and concisely to Boss.
+- For each email, simply state the sender name and the subject (e.g. "1. Glassdoor Jobs: MERN Stack Developer. 2. Google: Thanks for applying.").
+- Do NOT read email addresses, XML brackets, stars, slashes, or unnecessary filler words.`;
         } else {
           jobContext += `\n\n[GMAIL INBOX STATUS]: Checked inbox (${config.email.user}), but no new messages were found.`;
         }
