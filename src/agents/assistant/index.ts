@@ -23,21 +23,20 @@ import { emitToDashboard } from '../../services/socket';
 import { gitService } from '../../services/git';
 import { liveSearchService } from '../../services/liveSearch';
 
-// ---- Intent Detection ----
-
 function detectIntent(message: string): AgentType {
   const lower = message.toLowerCase();
-
+  const emailKeywords = ['email', 'mail', 'inbox', 'unread', 'sentinel'];
   const jobKeywords = ['job', 'apply', 'resume', 'application', 'career', 'interview', 'linkedin', 'salary', 'hire', 'position', 'opening'];
   const codeKeywords = ['code', 'debug', 'fix', 'build', 'write', 'function', 'bug', 'error', 'api', 'typescript', 'javascript', 'python', 'program', 'refactor', 'implement', 'git', 'push', 'pull', 'commit', 'branch', 'repo'];
   const researchKeywords = [
     'research', 'news', 'sports', 'cricket', 'football', 'match', 'score',
     'politics', 'election', 'minister', 'government', 'local', 'neighborhood',
     'chennai', 'india', 'today', 'happening', 'what is', 'explain', 'how does',
-    'find out', 'search', 'look up', 'latest', 'trending', 'ai news', 'tech news',
-    'who won', 'what happened', 'current', 'score'
+    'find out', 'search', 'look up', 'trending', 'ai news', 'tech news',
+    'who won', 'what happened', 'current'
   ];
 
+  if (emailKeywords.some((k) => lower.includes(k))) return 'assistant';
   if (jobKeywords.some((k) => lower.includes(k))) return 'hunter';
   if (codeKeywords.some((k) => lower.includes(k))) return 'cipher';
   if (researchKeywords.some((k) => lower.includes(k))) return 'research';
@@ -196,16 +195,18 @@ export class UltronAssistant {
     }
 
     // If email / inbox check intent
-    if (/(email|mail|inbox|job alert|interview mail|application mail|read my|read email|read inbox|check my email|any new mail|unread)/i.test(lowerMessage)) {
+    const isEmailIntent = /(email|mail|inbox|job alert|interview mail|application mail|read my|read email|read inbox|check my email|check my latest|any new mail|unread)/i.test(lowerMessage);
+
+    if (isEmailIntent) {
       try {
-        logAgent('SENTINEL', 'Checking inbox for emails...');
+        logAgent('SENTINEL', `Checking real inbox for ${config.email.user}...`);
         const inbox = await sentinelAgent.getRecentEmails(5);
         if (inbox.error) {
           jobContext += `\n\n[GMAIL INBOX STATUS]: ${inbox.error}`;
         } else if (inbox.emails.length > 0) {
           jobContext += `\n\n[REAL LIVE EMAILS FROM BOSS'S INBOX (${config.email.user})]:\n` +
             inbox.emails.map((e, i) => `${i+1}. From: ${e.from} | Subject: "${e.subject}" | Date: ${e.date}`).join('\n') +
-            `\n\nIMPORTANT: You have successfully connected to Boss's live Gmail inbox. These are 100% real live emails. Summarize these emails directly for Boss with zero simulation disclaimers.`;
+            `\n\nIMPORTANT: You have successfully connected to Boss's live Gmail inbox (${config.email.user}). These are 100% real live emails. Summarize these emails directly for Boss clearly and concisely.`;
         } else {
           jobContext += `\n\n[GMAIL INBOX STATUS]: Checked inbox (${config.email.user}), but no new messages were found.`;
         }
@@ -215,7 +216,9 @@ export class UltronAssistant {
     }
 
     // If Git intent (push, pull, status, commit, remote)
-    if (/(git push|push (my |the )?code|push (to |into )?git|push changes|git pull|pull (latest |my )?code|pull from git|git status|what changed|git log|git remote)/i.test(lowerMessage)) {
+    const isGitIntent = /(git push|push (my |the )?code|push (to |into )?git|push changes|git pull|pull (latest |my )?code|pull from git|git status|what changed|git log|git remote)/i.test(lowerMessage);
+
+    if (isGitIntent) {
       try {
         logAgent('CIPHER-GIT', `Processing Git command: ${lowerMessage}`);
         
@@ -250,10 +253,12 @@ export class UltronAssistant {
       }
     }
 
-    // If live news / sports / politics / neighborhood / web search intent
+    // If live news / sports / politics / neighborhood / web search intent (only if NOT email/git)
     if (
-      agentType === 'research' ||
-      /(news|sports|cricket|football|match|score|politics|election|minister|government|chennai|local|neighborhood|happening|who won|latest update|today's news|weather)/i.test(lowerMessage)
+      !isEmailIntent &&
+      !isGitIntent &&
+      (agentType === 'research' ||
+        /(news|sports|cricket|football|match|score|politics|election|minister|government|chennai|local|neighborhood|happening|who won|latest update|today's news|weather)/i.test(lowerMessage))
     ) {
       try {
         logAgent('RESEARCH', `Fetching real-time web & news data for: "${message}"`);

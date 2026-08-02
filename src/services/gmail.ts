@@ -17,7 +17,7 @@ export interface EmailMessage {
 
 function decodeMimeHeader(raw: string): string {
   try {
-    return raw.replace(/=\?([^?]+)\?([BQbq])\?([^?]+)\?=/g, (_, _charset, encoding, text) => {
+    const cleaned = raw.replace(/=\?([^?]+)\?([BQbq])\?([^?]+)\?=/g, (_, _charset, encoding, text) => {
       if (encoding.toUpperCase() === 'B') {
         return Buffer.from(text, 'base64').toString('utf8');
       }
@@ -27,9 +27,35 @@ function decodeMimeHeader(raw: string): string {
         ).replace(/_/g, ' ');
       }
       return text;
-    }).trim();
+    });
+
+    // Clean common mojibake characters
+    return cleaned
+      .replace(/â€™/g, "'")
+      .replace(/â€œ|â€/g, '"')
+      .replace(/âœ‰ï¸/g, '✉️')
+      .replace(/âï¸/g, '✉️')
+      .replace(/â/g, '')
+      .trim();
   } catch {
     return raw.trim();
+  }
+}
+
+function formatEmailDate(rawDate: string): string {
+  try {
+    const d = new Date(rawDate);
+    if (isNaN(d.getTime())) return rawDate;
+
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return rawDate;
   }
 }
 
@@ -66,7 +92,7 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
 
     const timeout = setTimeout(() => {
       socket.destroy();
-      resolve(emails);
+      resolve(emails.reverse());
     }, 12000);
 
     socket.on('data', (chunk: string) => {
@@ -91,7 +117,6 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
       } else if (step === 2 && buffer.includes('A2 OK')) {
         step = 3;
         buffer = '';
-        // Search for recent emails
         socket.write(`A3 SEARCH ALL\r\n`);
       } else if (step === 3 && buffer.includes('A3 OK')) {
         const match = buffer.match(/\* SEARCH (.*)/);
@@ -111,7 +136,6 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
         const idRange = recentIds.join(',');
         socket.write(`A4 FETCH ${idRange} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])\r\n`);
       } else if (step === 4 && buffer.includes('A4 OK')) {
-        // Parse fetched email headers
         const blocks = buffer.split(/\* \d+ FETCH/);
         for (const block of blocks) {
           const fromMatch = block.match(/From:\s*([^\r\n]+)/i);
@@ -121,13 +145,14 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
           if (fromMatch || subjectMatch) {
             const rawFrom = fromMatch ? fromMatch[1].trim() : 'Unknown Sender';
             const rawSubject = subjectMatch ? subjectMatch[1].trim() : 'No Subject';
-            const date = dateMatch ? dateMatch[1].trim() : new Date().toISOString();
+            const rawDate = dateMatch ? dateMatch[1].trim() : new Date().toISOString();
 
             const from = decodeMimeHeader(rawFrom);
             const subject = decodeMimeHeader(rawSubject);
+            const date = formatEmailDate(rawDate);
 
             emails.push({
-              id: `${from}-${subject}-${date}`.replace(/[^a-zA-Z0-9]/g, '_'),
+              id: `${from}-${subject}-${rawDate}`.replace(/[^a-zA-Z0-9]/g, '_'),
               from,
               subject,
               date,
@@ -139,14 +164,15 @@ export async function fetchRecentJobEmails(limit: number = 5): Promise<EmailMess
         socket.write('A99 LOGOUT\r\n');
         socket.destroy();
         clearTimeout(timeout);
-        resolve(emails);
+        // Return most recent first
+        resolve(emails.reverse());
       }
     });
 
     socket.on('error', (err) => {
       logger.error(`[GMAIL] Socket error: ${err.message}`);
       clearTimeout(timeout);
-      resolve(emails);
+      resolve(emails.reverse());
     });
   });
 }
