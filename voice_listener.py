@@ -3,7 +3,6 @@ import json
 import sys
 import time
 import re
-import threading
 
 # Command keywords — implicit activation when Boss speaks
 COMMAND_KEYWORDS = [
@@ -17,54 +16,26 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
-# Strict user interrupt words (only spoken when Boss wants to cut Buddy off)
-INTERRUPT_PATTERNS = [
-    r"\b(wait|wait wait|stop|stop it|pause|hold on|shut up|stop talking|be quiet|hush|cancel|listen)\b",
-]
-
-buddy_is_speaking = False
-
-def stdin_listener():
-    global buddy_is_speaking
-    for line in sys.stdin:
-        cmd = line.strip()
-        if cmd == "SPEAKING":
-            buddy_is_speaking = True
-        elif cmd == "SILENT":
-            buddy_is_speaking = False
-
-# Run background thread to receive speaking state from Node.js
-threading.Thread(target=stdin_listener, daemon=True).start()
-
-def is_strict_interrupt(text: str) -> bool:
-    for pattern in INTERRUPT_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return True
-    return False
-
 def listen_continuously():
-    global buddy_is_speaking
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold = 0.5
-    recognizer.non_speaking_duration = 0.3
+    recognizer.pause_threshold = 0.4
+    recognizer.non_speaking_duration = 0.2
 
-    # Adjust for ambient noise
+    # Adjust for ambient noise once at startup
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.6)
+        recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
     print(json.dumps({"status": "ready"}), flush=True)
 
-    # Start ACTIVE immediately
+    # Start ACTIVE immediately for 3 minutes
     active_until = time.time() + 180
 
     while True:
         try:
             with sr.Microphone() as source:
-                # Fast chunking during speech so interrupts trigger immediately in < 1 second
-                phrase_limit = 2.5 if buddy_is_speaking else 10
-                recognizer.pause_threshold = 0.25 if buddy_is_speaking else 0.5
-                audio = recognizer.listen(source, phrase_time_limit=phrase_limit, timeout=None)
+                # Use very short phrase_time_limit so every word is captured quickly
+                audio = recognizer.listen(source, phrase_time_limit=3, timeout=None)
 
             text = recognizer.recognize_google(audio).strip().lower()
             if not text or len(text) < 2:
@@ -72,25 +43,9 @@ def listen_continuously():
 
             now = time.time()
 
-            # If Buddy is currently speaking through the speakers:
-            if buddy_is_speaking:
-                # ONLY trigger if Boss explicitly tells Buddy to stop / wait
-                if is_strict_interrupt(text):
-                    active_until = now + 60
-                    print(json.dumps({"type": "interrupt", "text": text}), flush=True)
-                # Ignore self-echo and background chatter
-                continue
-
-            # If Buddy is NOT speaking (normal user input):
-            if is_strict_interrupt(text):
-                active_until = now + 60
-                print(json.dumps({"type": "interrupt", "text": text}), flush=True)
-                continue
-
-            # Wake words — explicit activation
+            # Always emit every recognized phrase with its raw text.
+            # Node.js will decide what to do based on its isSpeaking state.
             is_wake = any(w in text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])
-
-            # Command keywords — implicit activation
             is_command_phrase = any(kw in text for kw in COMMAND_KEYWORDS)
 
             if is_wake:
@@ -110,6 +65,7 @@ def listen_continuously():
                 print(json.dumps({"type": "command", "text": text}), flush=True)
 
             else:
+                # Still emit as transcript — Node may ignore or log it
                 print(json.dumps({"type": "transcript", "text": text}), flush=True)
 
         except sr.UnknownValueError:

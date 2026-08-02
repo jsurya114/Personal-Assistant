@@ -1,17 +1,18 @@
 import { spawn, exec } from 'child_process';
-import util from 'util';
 import path from 'path';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
 import { emitToDashboard } from './services/socket';
 
-const execAsync = util.promisify(exec);
+// ─── State ────────────────────────────────────────────────────────────────────
 let assistant: UltronAssistant;
 let isSpeaking = false;
 let isProcessing = false;
+let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 
-function cleanTextForSpeech(rawText: string): string {
-  return rawText
+// ─── Text cleaner ─────────────────────────────────────────────────────────────
+function cleanTextForSpeech(raw: string): string {
+  return raw
     .replace(/```[\s\S]*?```/g, 'code snippet.')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/#{1,6}\s*/g, '')
@@ -26,33 +27,34 @@ function cleanTextForSpeech(rawText: string): string {
     .trim();
 }
 
-let activeTtsProcess: ReturnType<typeof spawn> | null = null;
-let listenerProcess: ReturnType<typeof spawn> | null = null;
+// ─── Interrupt detection (runs in Node — no Python IPC needed) ────────────────
+const INTERRUPT_RE = /\b(wait|stop|pause|hold on|shut up|stop talking|be quiet|hush|cancel)\b/i;
 
-export function stopSpeaking() {
+function isInterruptPhrase(text: string): boolean {
+  return INTERRUPT_RE.test(text);
+}
+
+// ─── Stop current speech immediately ─────────────────────────────────────────
+export function stopSpeaking(): void {
   if (activeTtsProcess) {
-    try {
-      activeTtsProcess.kill('SIGKILL');
-    } catch {}
+    try { activeTtsProcess.kill('SIGKILL'); } catch {}
     activeTtsProcess = null;
   }
   isSpeaking = false;
-  try {
-    listenerProcess?.stdin?.write('SILENT\n');
-  } catch {}
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
-// Simple TTS wrapper for macOS with instant interrupt support
+// ─── Speak via macOS native TTS ───────────────────────────────────────────────
 export function speak(text: string): Promise<void> {
   return new Promise((resolve) => {
-    stopSpeaking();
+    // Kill any current speech before starting new one
+    if (activeTtsProcess) {
+      try { activeTtsProcess.kill('SIGKILL'); } catch {}
+      activeTtsProcess = null;
+    }
 
     const clean = cleanTextForSpeech(text);
-    if (!clean) {
-      isSpeaking = false;
-      return resolve();
-    }
+    if (!clean) { resolve(); return; }
 
     isSpeaking = true;
     console.log(`\n🎙️ [Buddy]: ${text}\n`);
@@ -60,141 +62,134 @@ export function speak(text: string): Promise<void> {
     emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
     emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
 
-    try {
-      listenerProcess?.stdin?.write('SPEAKING\n');
-    } catch {}
-
     activeTtsProcess = spawn('say', [clean]);
 
-    activeTtsProcess.on('error', (err) => {
-      console.error('Error playing audio:', err.message);
+    const done = () => {
       isSpeaking = false;
       activeTtsProcess = null;
-      try {
-        listenerProcess?.stdin?.write('SILENT\n');
-      } catch {}
       emitToDashboard('VOICE_STATUS', { state: 'idle' });
       resolve();
-    });
+    };
 
-    activeTtsProcess.on('close', () => {
-      isSpeaking = false;
-      activeTtsProcess = null;
-      try {
-        listenerProcess?.stdin?.write('SILENT\n');
-      } catch {}
-      emitToDashboard('VOICE_STATUS', { state: 'idle' });
-      resolve();
+    activeTtsProcess.on('close', done);
+    activeTtsProcess.on('error', (err) => {
+      console.error('TTS error:', err.message);
+      done();
     });
   });
 }
 
-async function handleCommand(text: string) {
-  if (isProcessing) return; // Prevent overlapping requests
+// ─── Handle a voice command from Boss ────────────────────────────────────────
+async function handleCommand(text: string): Promise<void> {
+  if (isProcessing) return;
   isProcessing = true;
-
   try {
     console.log(`\n🗣️ [Boss]: ${text}`);
     emitToDashboard('VOICE_USER_SPEAKING', { text });
     emitToDashboard('VOICE_STATUS', { state: 'thinking', text });
 
-    if (!assistant) {
-      assistant = new UltronAssistant();
-    }
+    if (!assistant) assistant = new UltronAssistant();
 
     const response = await assistant.chat({
       message: text,
       conversationId: 'terminal-voice'
     });
 
-    if (response && response.response) {
+    if (response?.response) {
       await speak(response.response);
     }
-  } catch (error) {
-    console.error('Error processing command:', error);
-    await speak("Boss, I am processing your request.");
+  } catch (err) {
+    console.error('Error processing command:', err);
+    await speak("Boss, I hit a snag. Try again.");
   } finally {
     isProcessing = false;
   }
 }
 
-export function startVoiceDaemon() {
+// ─── Voice Daemon ─────────────────────────────────────────────────────────────
+export function startVoiceDaemon(): void {
   console.log('🤖 Initializing Ultron Voice Engine...');
-  
+
   const pythonExecutable = path.resolve(__dirname, '../.venv/bin/python');
   const listenerScript = path.resolve(__dirname, '../voice_listener.py');
 
-  const child = spawn(pythonExecutable, [listenerScript]);
-  listenerProcess = child;
+  const child = spawn(pythonExecutable, [listenerScript], {
+    stdio: ['ignore', 'pipe', 'pipe']   // stdin=ignore, stdout/stderr piped
+  });
 
-  child.stdout.on('data', (data) => {
-    const lines = data.toString().split('\n').filter((l: string) => l.trim().length > 0);
-    
+  child.stdout.on('data', (data: Buffer) => {
+    const lines = data.toString().split('\n').filter(l => l.trim().length > 0);
+
     for (const line of lines) {
       try {
-        const payload = JSON.parse(line);
-        
+        const payload: { status?: string; type?: string; text?: string; message?: string } = JSON.parse(line);
+
         if (payload.status === 'ready') {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
           emitToDashboard('VOICE_STATUS', { state: 'ready' });
           speak('Hi Boss. Ultron is online and listening. Just speak naturally.');
-        } else if (payload.type === 'interrupt') {
-          console.log(`⚡ [Interrupt]: Boss spoke ("${payload.text}")`);
-          stopSpeaking();
-          
-          const hasCommandWords = /(search|find|list|show|open|check|jobs|weather|news|email|mail|remember)/i.test(payload.text);
-          if (!hasCommandWords) {
-            speak("Okay Boss, I'm listening.");
-          } else {
-            handleCommand(payload.text);
-          }
-        } else if (payload.type === 'command') {
+
+        } else if (payload.type === 'command' || payload.type === 'transcript') {
+          const text = payload.text ?? '';
+
           if (isSpeaking) {
-            console.log(`⚡ [Interrupt]: Boss interrupted Buddy ("${payload.text}")`);
-            stopSpeaking();
-            const hasCommandWords = /(search|find|list|show|open|check|jobs|weather|news|email|mail|remember)/i.test(payload.text);
-            if (!hasCommandWords) {
+            // Any speech while Buddy is talking = treat as interrupt.
+            // Only act on it if it's an explicit interrupt OR a real command.
+            if (isInterruptPhrase(text)) {
+              console.log(`⚡ [Interrupt]: "${text}" — stopping speech.`);
+              stopSpeaking();
               speak("Okay Boss, I'm listening.");
-            } else {
-              handleCommand(payload.text);
+            } else if (payload.type === 'command') {
+              // Boss is asking something new while Buddy speaks → stop and handle
+              console.log(`⚡ [Barge-in]: "${text}" — redirecting.`);
+              stopSpeaking();
+              handleCommand(text);
             }
-          } else if (!isProcessing) {
-            handleCommand(payload.text);
+            // Ignore transcripts while Buddy speaks (echo)
+
+          } else if (payload.type === 'command' && !isProcessing) {
+            handleCommand(text);
           }
+
         } else if (payload.type === 'deactivate') {
-          console.log(`😴 [Buddy]: Going quiet. Say "Buddy" or any command to wake me up.`);
+          console.log(`😴 [Buddy]: Going quiet. Say any command to wake me.`);
           emitToDashboard('VOICE_STATUS', { state: 'sleeping' });
-        } else if (payload.type === 'transcript') {
-          emitToDashboard('VOICE_AMBIENT', { text: payload.text });
+
         } else if (payload.type === 'error') {
-          console.error(`⚠️ [STT Warning]: ${payload.message}`);
+          console.error(`⚠️ [STT]: ${payload.message}`);
         }
-      } catch (e) {
-        // Ignore non-json debug lines
+
+      } catch {
+        // Non-JSON debug line — ignore
       }
     }
   });
 
-  child.stderr.on('data', (data) => {
-    console.error(`[Python STT Error]: ${data}`);
+  child.stderr.on('data', (data: Buffer) => {
+    const msg = data.toString().trim();
+    if (msg) console.error(`[Python STT]: ${msg}`);
   });
 
   child.on('close', (code) => {
-    console.log(`Voice Engine exited with code ${code}. Restarting in 3 seconds...`);
+    console.log(`Voice Engine exited (code ${code}). Restarting in 3s...`);
+    listenerProcess = null;
     setTimeout(startVoiceDaemon, 3000);
   });
+
+  listenerProcess = child;
 }
 
-// Start the Daemon if run directly
+let listenerProcess: ReturnType<typeof spawn> | null = null;
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
 if (require.main === module) {
   (async () => {
     try {
       await initDatabase();
       assistant = new UltronAssistant();
       startVoiceDaemon();
-    } catch (error) {
-      console.error('Failed to start Voice Engine:', error);
+    } catch (err) {
+      console.error('Failed to start Voice Engine:', err);
     }
   })();
 }
-
