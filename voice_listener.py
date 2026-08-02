@@ -2,7 +2,7 @@ import speech_recognition as sr
 import json
 import sys
 import time
-import re
+import os
 
 # Command keywords — implicit activation when Boss speaks
 COMMAND_KEYWORDS = [
@@ -16,37 +16,29 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
-# Shared speaking state — written by Node's stdout replies via env trick.
-# Since we removed stdin IPC, Node cannot signal us. Instead we track
-# whether we've recently heard our own TTS output by checking a flag
-# passed via a simple file-based semaphore.
-buddy_speaking_flag = '/tmp/ultron_buddy_speaking'
-
-import os
+# Flag file written by Node.js to signal Buddy is speaking
+SPEAKING_FLAG = '/tmp/ultron_buddy_speaking'
 
 def is_buddy_speaking() -> bool:
-    return os.path.exists(buddy_speaking_flag)
+    return os.path.exists(SPEAKING_FLAG)
+
+# ─── Chunk-buffering command assembler ────────────────────────────────────────
+# Strategy:
+#   - Always use short phrase_time_limit=2s → listen loop never blocks long
+#   - When Buddy is NOT speaking: buffer incoming chunks; flush as one command
+#     after FLUSH_TIMEOUT seconds of silence between chunks
+#   - When Buddy IS speaking: any incoming speech = immediate interrupt signal
+# ──────────────────────────────────────────────────────────────────────────────
+FLUSH_TIMEOUT = 1.2    # seconds of silence between chunks before flushing buffer
+PHRASE_LIMIT  = 2.5    # max seconds per chunk — short so loop stays responsive
 
 def listen_continuously():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
+    recognizer.pause_threshold    = 0.6   # silence inside a chunk to mark end
+    recognizer.non_speaking_duration = 0.3
 
-    # ── Normal mode (Boss speaking): generous pause so full phrase captured ──
-    # pause_threshold: seconds of silence after speech ends = end of phrase
-    # non_speaking_duration: how long silence must persist before stop
-    NORMAL_PAUSE     = 1.0   # wait 1s of silence after Boss stops talking
-    NORMAL_NON_SPEAK = 0.5   # 0.5s non-speaking to close phrase
-    NORMAL_PHRASE    = 15    # allow up to 15 seconds per command
-
-    # ── Interrupt mode (Buddy speaking): fast, short chunks ──
-    INTERRUPT_PAUSE     = 0.3
-    INTERRUPT_NON_SPEAK = 0.2
-    INTERRUPT_PHRASE    = 3    # capture quickly so interrupt fires fast
-
-    recognizer.pause_threshold    = NORMAL_PAUSE
-    recognizer.non_speaking_duration = NORMAL_NON_SPEAK
-
-    # Adjust for ambient noise once at startup
+    # Calibrate for ambient noise once
     with sr.Microphone() as source:
         recognizer.adjust_for_ambient_noise(source, duration=0.8)
 
@@ -55,22 +47,35 @@ def listen_continuously():
     # Start ACTIVE immediately for 3 minutes
     active_until = time.time() + 180
 
+    # Buffer for assembling multi-chunk commands
+    buffer: list[str] = []
+    last_chunk_at: float = 0.0
+
     while True:
+        # ── Flush buffer if enough silence has passed ──────────────────────
+        now = time.time()
+        if buffer and (now - last_chunk_at) >= FLUSH_TIMEOUT:
+            full_text = ' '.join(buffer).strip()
+            buffer = []
+            last_chunk_at = 0.0
+
+            if full_text:
+                is_wake = any(w in full_text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])
+                is_command_phrase = any(kw in full_text for kw in COMMAND_KEYWORDS)
+
+                if any(w in full_text for w in ["stop listening", "go to sleep", "bye buddy", "bye ultron"]):
+                    active_until = 0
+                    print(json.dumps({"type": "deactivate", "text": full_text}), flush=True)
+                elif is_wake or now < active_until or is_command_phrase:
+                    active_until = now + 60
+                    print(json.dumps({"type": "command", "text": full_text}), flush=True)
+                else:
+                    print(json.dumps({"type": "transcript", "text": full_text}), flush=True)
+
+        # ── Listen for next short audio chunk ──────────────────────────────
         try:
-            speaking = is_buddy_speaking()
-
-            # Adjust recognizer thresholds based on whether Buddy is speaking
-            if speaking:
-                recognizer.pause_threshold       = INTERRUPT_PAUSE
-                recognizer.non_speaking_duration = INTERRUPT_NON_SPEAK
-                phrase_limit = INTERRUPT_PHRASE
-            else:
-                recognizer.pause_threshold       = NORMAL_PAUSE
-                recognizer.non_speaking_duration = NORMAL_NON_SPEAK
-                phrase_limit = NORMAL_PHRASE
-
             with sr.Microphone() as source:
-                audio = recognizer.listen(source, phrase_time_limit=phrase_limit, timeout=None)
+                audio = recognizer.listen(source, phrase_time_limit=PHRASE_LIMIT, timeout=None)
 
             text = recognizer.recognize_google(audio).strip().lower()
             if not text or len(text) < 2:
@@ -78,33 +83,20 @@ def listen_continuously():
 
             now = time.time()
 
-            # Always emit every recognized phrase with its raw text.
-            # Node.js will decide what to do based on its isSpeaking state.
-            is_wake = any(w in text for w in ["buddy", "ultron", "hey buddy", "hey ultron"])
-            is_command_phrase = any(kw in text for kw in COMMAND_KEYWORDS)
-
-            if is_wake:
-                active_until = now + 60
+            if is_buddy_speaking():
+                # ── INTERRUPT MODE: Buddy is speaking ──────────────────────
+                # Any speech from Boss = immediate interrupt — no buffering
                 print(json.dumps({"type": "command", "text": text}), flush=True)
-
-            elif now < active_until:
-                if any(w in text for w in ["stop listening", "go to sleep", "bye buddy", "bye ultron"]):
-                    active_until = 0
-                    print(json.dumps({"type": "deactivate", "text": text}), flush=True)
-                else:
-                    active_until = now + 60
-                    print(json.dumps({"type": "command", "text": text}), flush=True)
-
-            elif is_command_phrase:
-                active_until = now + 60
-                print(json.dumps({"type": "command", "text": text}), flush=True)
-
+                # Clear buffer so leftover chunks don't replay after interrupt
+                buffer = []
+                last_chunk_at = 0.0
             else:
-                # Still emit as transcript — Node may ignore or log it
-                print(json.dumps({"type": "transcript", "text": text}), flush=True)
+                # ── NORMAL MODE: Add chunk to buffer ──────────────────────
+                buffer.append(text)
+                last_chunk_at = now
 
         except sr.UnknownValueError:
-            pass
+            pass   # silence or unrecognized audio
         except sr.RequestError as e:
             print(json.dumps({"type": "error", "message": f"Speech API error: {e}"}), flush=True)
         except Exception:
