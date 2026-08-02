@@ -1,4 +1,4 @@
-import { spawn, exec } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
@@ -25,13 +25,6 @@ function cleanTextForSpeech(raw: string): string {
     .replace(/"/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
-}
-
-// ─── Interrupt detection (runs in Node — no Python IPC needed) ────────────────
-const INTERRUPT_RE = /\b(wait|stop|pause|hold on|shut up|stop talking|be quiet|hush|cancel)\b/i;
-
-function isInterruptPhrase(text: string): boolean {
-  return INTERRUPT_RE.test(text);
 }
 
 // ─── Stop current speech immediately ─────────────────────────────────────────
@@ -133,19 +126,10 @@ export function startVoiceDaemon(): void {
           const text = payload.text ?? '';
 
           if (isSpeaking) {
-            // Any speech while Buddy is talking = treat as interrupt.
-            // Only act on it if it's an explicit interrupt OR a real command.
-            if (isInterruptPhrase(text)) {
-              console.log(`⚡ [Interrupt]: "${text}" — stopping speech.`);
-              stopSpeaking();
-              speak("Okay Boss, I'm listening.");
-            } else if (payload.type === 'command') {
-              // Boss is asking something new while Buddy speaks → stop and handle
-              console.log(`⚡ [Barge-in]: "${text}" — redirecting.`);
-              stopSpeaking();
-              handleCommand(text);
-            }
-            // Ignore transcripts while Buddy speaks (echo)
+            // Boss said ANYTHING while Buddy is speaking → stop immediately and listen
+            console.log(`⚡ [Interrupt]: Boss spoke while Buddy was talking → stopping.`);
+            stopSpeaking();
+            speak("Go ahead Boss, I am listening.");
 
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);
