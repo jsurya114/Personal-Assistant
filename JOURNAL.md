@@ -723,9 +723,26 @@ memory/
 - Live tested live news & cricket search — returned real-time results from Sunday, August 2, 2026.
 - Verified barge-in interrupt and socket events across terminal, API, and Web UI.
 
+### Session 15 — 2026-08-02
+
+**AI Used:** Antigravity (Google DeepMind)
+**Account:** jayasuryas@...
+
+**What was done this session:**
+- Reverted background daemon scripts and launcher at Boss's request to return Ultron to its clean, developer-friendly interactive CLI setup.
+- Restored `src/voice.ts` to simple, clean native macOS `say` execution:
+  - Sanitized speech text for punctuation and markdown formatting.
+  - Eliminated audio feedback loops and accidental speech cancellation.
+  - Ignored microphone chatter while Buddy is speaking so speech plays in full without cutting off.
+  - Removed auto-focus browser popup that stole window focus on every voice query.
+- Enhanced Groq multi-model fallback pool (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`, `gemma2-9b-it`) to eliminate 429 rate limit errors.
+- Compressed memory context prompt size to reduce token consumption by >80%.
+- Verified clean build with `npx tsc --noEmit` (0 errors) and pushed changes to GitHub `origin/main`.
+
 ---
 
-*Last updated: 2026-08-02 — Session 14*
+*Last updated: 2026-08-02 — Session 15*
+
 
 
 
