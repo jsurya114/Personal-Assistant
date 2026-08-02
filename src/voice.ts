@@ -1,4 +1,4 @@
-import { spawn, exec } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import readline from 'readline';
 import { UltronAssistant } from './agents/assistant';
@@ -40,19 +40,25 @@ export function stopSpeaking(): void {
     }
     activeTtsProcess = null;
   }
-  // Force kill any lingering macOS say processes for instant silence
-  exec('killall say 2>/dev/null', () => {});
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
 // ─── Speak text naturally and smoothly ───────────────────────────────────────
 export function speak(text: string): Promise<void> {
   return new Promise((resolve) => {
-    // Terminate any previous speech
-    stopSpeaking();
+    // Terminate any previous active process directly
+    if (activeTtsProcess) {
+      try {
+        activeTtsProcess.kill('SIGKILL');
+      } catch {
+        // Already dead
+      }
+      activeTtsProcess = null;
+    }
 
     const clean = cleanTextForSpeech(text);
     if (!clean) {
+      isSpeaking = false;
       resolve();
       return;
     }
