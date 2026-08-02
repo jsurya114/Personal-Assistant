@@ -9,6 +9,8 @@
     "voice": "tsx src/voice.ts",
     "app": "./Launch-Ultron.command",
     "desktop": "open -na 'Google Chrome' --args --app=http://localhost:3000 --window-size=1300,880 || open http://localhost:3000",
+    "service:install": "./setup-autostart.sh",
+    "service:uninstall": "./uninstall-autostart.sh",
     "start:bg": "pm2 start ecosystem.config.js",
     "stop:bg": "pm2 stop ecosystem.config.js",
     "restart:bg": "pm2 restart ecosystem.config.js",
