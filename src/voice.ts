@@ -11,6 +11,7 @@ let isSpeaking = false;
 let isProcessing = false;
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 let listenerProcess: ReturnType<typeof spawn> | null = null;
+let currentlySpeakingText = '';
 
 // ─── Text cleaner for TTS ────────────────────────────────────────────────────
 function cleanTextForSpeech(raw: string): string {
@@ -29,9 +30,33 @@ function cleanTextForSpeech(raw: string): string {
     .trim();
 }
 
+// ─── Acoustic Echo Filter ────────────────────────────────────────────────────
+// Detects if audio picked up by mic is just Buddy's voice coming out of the speakers
+function isSpeakerEcho(heardText: string): boolean {
+  if (!currentlySpeakingText) return false;
+
+  const heard = heardText.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+  const speaking = currentlySpeakingText.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+
+  if (!heard || !speaking) return false;
+
+  // Direct substring match (e.g. "cristi" inside "cristiano ronaldo...")
+  if (speaking.includes(heard)) {
+    return true;
+  }
+
+  // Word overlap ratio: if majority of heard words are in Buddy's speech, it's echo
+  const heardWords = heard.split(/\s+/).filter((w) => w.length > 2);
+  if (heardWords.length === 0) return true; // short audio artifact
+
+  const matchingWords = heardWords.filter((w) => speaking.includes(w));
+  return matchingWords.length / heardWords.length >= 0.6;
+}
+
 // ─── Stop any active TTS immediately ─────────────────────────────────────────
 export function stopSpeaking(): void {
   isSpeaking = false;
+  currentlySpeakingText = '';
   if (activeTtsProcess) {
     try {
       activeTtsProcess.kill('SIGKILL');
@@ -59,11 +84,13 @@ export function speak(text: string): Promise<void> {
     const clean = cleanTextForSpeech(text);
     if (!clean) {
       isSpeaking = false;
+      currentlySpeakingText = '';
       resolve();
       return;
     }
 
     isSpeaking = true;
+    currentlySpeakingText = clean;
     console.log(`\n🎙️ [Buddy]: ${text}\n`);
     emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
     emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
@@ -75,6 +102,7 @@ export function speak(text: string): Promise<void> {
       if (activeTtsProcess === proc) {
         activeTtsProcess = null;
         isSpeaking = false;
+        currentlySpeakingText = '';
         emitToDashboard('VOICE_STATUS', { state: 'idle' });
       }
       resolve();
@@ -85,6 +113,7 @@ export function speak(text: string): Promise<void> {
       if (activeTtsProcess === proc) {
         activeTtsProcess = null;
         isSpeaking = false;
+        currentlySpeakingText = '';
         emitToDashboard('VOICE_STATUS', { state: 'idle' });
       }
       resolve();
@@ -172,15 +201,27 @@ export function startVoiceDaemon(): void {
           if (!text) continue;
 
           if (isSpeaking) {
-            console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
-            stopSpeaking();
+            // Check for explicit stop command from Boss
+            const isExplicitStop = /^(stop|wait|pause|hold on|shut up|quiet|cancel|hush|buddy stop|buddy wait)$/i.test(text);
 
-            const isPureInterrupt = /^(stop|wait|pause|hold on|shut up|quiet|cancel|buddy|hey buddy)$/i.test(text);
-            if (isPureInterrupt) {
+            if (isExplicitStop) {
+              console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
+              stopSpeaking();
               speak('Go ahead Boss, I am listening.');
-            } else {
-              handleCommand(text);
+              continue;
             }
+
+            // Check if this is just Buddy's speaker echo heard by the microphone
+            if (isSpeakerEcho(text)) {
+              // Ignore speaker echo — let Buddy finish speaking
+              continue;
+            }
+
+            // Boss spoke a new question/command while Buddy was talking
+            console.log(`⚡ [Barge-In]: "${text}" — switching to new command.`);
+            stopSpeaking();
+            handleCommand(text);
+
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);
           }
