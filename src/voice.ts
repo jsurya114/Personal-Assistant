@@ -1,31 +1,18 @@
-import { spawn } from 'child_process';
-import { writeFileSync, unlinkSync, existsSync } from 'fs';
+import { spawn, exec } from 'child_process';
 import path from 'path';
+import readline from 'readline';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
 import { emitToDashboard } from './services/socket';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let assistant: UltronAssistant;
-let isSpeaking = false;       // true while any sentence is playing
-let interrupted = false;      // set when Boss speaks during playback
+let isSpeaking = false;
 let isProcessing = false;
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 let listenerProcess: ReturnType<typeof spawn> | null = null;
 
-const SPEAKING_FLAG = '/tmp/ultron_buddy_speaking';
-
-function setSpeakingFlag(speaking: boolean): void {
-  try {
-    if (speaking) {
-      writeFileSync(SPEAKING_FLAG, '1');
-    } else if (existsSync(SPEAKING_FLAG)) {
-      unlinkSync(SPEAKING_FLAG);
-    }
-  } catch { /* ignore fs errors */ }
-}
-
-// ─── Text cleaner ─────────────────────────────────────────────────────────────
+// ─── Text cleaner for TTS ────────────────────────────────────────────────────
 function cleanTextForSpeech(raw: string): string {
   return raw
     .replace(/```[\s\S]*?```/g, 'code snippet.')
@@ -42,82 +29,64 @@ function cleanTextForSpeech(raw: string): string {
     .trim();
 }
 
-// ─── Split text into small word-groups for near-instant interruptibility ──────
-function splitIntoChunks(text: string): string[] {
-  const WORDS_PER_CHUNK = 4; // speak 4 words at a time → interrupt latency < 1s
-  const words = text.split(/\s+/).filter(w => w.length > 0);
-  const chunks: string[] = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
-    chunks.push(words.slice(i, i + WORDS_PER_CHUNK).join(' '));
+// ─── Stop any active TTS immediately ─────────────────────────────────────────
+export function stopSpeaking(): void {
+  isSpeaking = false;
+  if (activeTtsProcess) {
+    try {
+      activeTtsProcess.kill('SIGKILL');
+    } catch {
+      // Process already terminated
+    }
+    activeTtsProcess = null;
   }
-  return chunks;
+  // Force kill any lingering macOS say processes for instant silence
+  exec('killall say 2>/dev/null', () => {});
+  emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
-// ─── Speak a single chunk synchronously ──────────────────────────────────────
-function speakChunk(chunk: string): Promise<void> {
+// ─── Speak text naturally and smoothly ───────────────────────────────────────
+export function speak(text: string): Promise<void> {
   return new Promise((resolve) => {
-    if (interrupted) { resolve(); return; }
+    // Terminate any previous speech
+    stopSpeaking();
 
-    activeTtsProcess = spawn('say', [chunk]);
+    const clean = cleanTextForSpeech(text);
+    if (!clean) {
+      resolve();
+      return;
+    }
 
-    activeTtsProcess.on('close', () => {
-      activeTtsProcess = null;
+    isSpeaking = true;
+    console.log(`\n🎙️ [Buddy]: ${text}\n`);
+    emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
+    emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
+
+    const proc = spawn('say', [clean]);
+    activeTtsProcess = proc;
+
+    proc.on('close', () => {
+      if (activeTtsProcess === proc) {
+        activeTtsProcess = null;
+        isSpeaking = false;
+        emitToDashboard('VOICE_STATUS', { state: 'idle' });
+      }
       resolve();
     });
 
-    activeTtsProcess.on('error', (err) => {
-      console.error('TTS chunk error:', err.message);
-      activeTtsProcess = null;
+    proc.on('error', (err) => {
+      console.error('TTS error:', err.message);
+      if (activeTtsProcess === proc) {
+        activeTtsProcess = null;
+        isSpeaking = false;
+        emitToDashboard('VOICE_STATUS', { state: 'idle' });
+      }
       resolve();
     });
   });
 }
 
-// ─── Stop any active TTS immediately ─────────────────────────────────────────
-export function stopSpeaking(): void {
-  interrupted = true;   // signal the sentence loop to abort
-  if (activeTtsProcess) {
-    try { activeTtsProcess.kill('SIGKILL'); } catch {}
-    activeTtsProcess = null;
-  }
-  isSpeaking = false;
-  setSpeakingFlag(false);
-  emitToDashboard('VOICE_STATUS', { state: 'idle' });
-}
-
-// ─── Speak full response sentence by sentence ─────────────────────────────────
-export async function speak(text: string): Promise<void> {
-  // Stop any current speech
-  stopSpeaking();
-
-  const clean = cleanTextForSpeech(text);
-  if (!clean) return;
-
-  // Reset interrupt flag for this new response
-  interrupted = false;
-  isSpeaking = true;
-  setSpeakingFlag(true);
-
-  console.log(`\n🎙️ [Buddy]: ${text}\n`);
-  emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
-  emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
-
-  const chunks = splitIntoChunks(clean);
-
-  for (const chunk of chunks) {
-    if (interrupted) break;   // Boss interrupted — stop immediately
-    await speakChunk(chunk);
-  }
-
-  // Only mark idle if we weren't interrupted in the middle
-  if (!interrupted) {
-    isSpeaking = false;
-    setSpeakingFlag(false);
-    emitToDashboard('VOICE_STATUS', { state: 'idle' });
-  }
-}
-
-// ─── Handle a voice command from Boss ────────────────────────────────────────
+// ─── Handle a voice / text command from Boss ────────────────────────────────
 async function handleCommand(text: string): Promise<void> {
   if (isProcessing) return;
   isProcessing = true;
@@ -144,6 +113,30 @@ async function handleCommand(text: string): Promise<void> {
   }
 }
 
+// ─── Keyboard Barge-In / Terminal Input ─────────────────────────────────────
+function setupTerminalInput(): void {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false
+  });
+
+  rl.on('line', (line) => {
+    const trimmed = line.trim();
+    if (isSpeaking) {
+      console.log('⚡ [Interrupt via Terminal]');
+      stopSpeaking();
+      if (!trimmed) {
+        speak('Go ahead Boss, I am listening.');
+        return;
+      }
+    }
+    if (trimmed) {
+      handleCommand(trimmed);
+    }
+  });
+}
+
 // ─── Voice Daemon ─────────────────────────────────────────────────────────────
 export function startVoiceDaemon(): void {
   console.log('🤖 Initializing Ultron Voice Engine...');
@@ -156,7 +149,7 @@ export function startVoiceDaemon(): void {
   });
 
   child.stdout.on('data', (data: Buffer) => {
-    const lines = data.toString().split('\n').filter(l => l.trim().length > 0);
+    const lines = data.toString().split('\n').filter((l) => l.trim().length > 0);
 
     for (const line of lines) {
       try {
@@ -164,19 +157,24 @@ export function startVoiceDaemon(): void {
 
         if (payload.status === 'ready') {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
+          console.log('💡 Tip: Speak naturally or press Enter in terminal to interrupt at any time.\n');
           emitToDashboard('VOICE_STATUS', { state: 'ready' });
           speak('Hi Boss. Ultron is online and listening. Just speak naturally.');
 
         } else if (payload.type === 'command' || payload.type === 'transcript') {
-          const text = payload.text ?? '';
+          const text = (payload.text ?? '').trim();
+          if (!text) continue;
 
           if (isSpeaking) {
-            // Boss said something while Buddy is speaking → stop immediately
             console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
             stopSpeaking();
-            // Small delay to let SIGKILL settle, then acknowledge
-            setTimeout(() => speak("Go ahead Boss, I am listening."), 400);
 
+            const isPureInterrupt = /^(stop|wait|pause|hold on|shut up|quiet|cancel|buddy|hey buddy)$/i.test(text);
+            if (isPureInterrupt) {
+              speak('Go ahead Boss, I am listening.');
+            } else {
+              handleCommand(text);
+            }
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);
           }
@@ -207,6 +205,7 @@ export function startVoiceDaemon(): void {
   });
 
   listenerProcess = child;
+  setupTerminalInput();
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
