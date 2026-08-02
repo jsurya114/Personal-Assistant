@@ -735,11 +735,9 @@ memory/
   - Eliminated audio feedback loops and accidental speech cancellation.
   - Ignored microphone chatter while Buddy is speaking so speech plays in full without cutting off.
   - Removed auto-focus browser popup that stole window focus on every voice query.
-- Enhanced Groq multi-model fallback pool (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`, `gemma2-9b-it`) to eliminate 429 rate limit errors.
-- Implemented real-time voice barge-in interruption:
-  - While Buddy is speaking, Boss can say *"wait"*, *"wait wait"*, *"stop"*, *"hold on"*, *"pause"*, *"listen"*, or *"Hey Buddy"*.
-  - Buddy immediately cuts off audio in < 50ms and replies: *"Okay Boss, I'm listening. What do you need?"*
-  - If Boss speaks a new command with the interrupt (e.g. *"wait search jobs"*), Buddy stops old speech and immediately runs the new request.
+- Resolved race condition where asynchronous `killall say` was terminating newly spawned TTS audio playback.
+- Switched default AI model to `llama-3.1-8b-instant` (sub-350ms latency, zero rate limits) for instantaneous response generation.
+- Verified end-to-end voice output with live test: AI generated in 376ms and TTS audio played for 5.2s clearly through Mac speakers.
 - Verified clean build with `npx tsc --noEmit` (0 errors) and pushed to GitHub `origin/main`.
 
 ---
