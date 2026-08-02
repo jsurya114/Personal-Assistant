@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import path from 'path';
 import { UltronAssistant } from './agents/assistant';
 import { initDatabase } from './database';
@@ -11,6 +12,18 @@ let interrupted = false;      // set when Boss speaks during playback
 let isProcessing = false;
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
 let listenerProcess: ReturnType<typeof spawn> | null = null;
+
+const SPEAKING_FLAG = '/tmp/ultron_buddy_speaking';
+
+function setSpeakingFlag(speaking: boolean): void {
+  try {
+    if (speaking) {
+      writeFileSync(SPEAKING_FLAG, '1');
+    } else if (existsSync(SPEAKING_FLAG)) {
+      unlinkSync(SPEAKING_FLAG);
+    }
+  } catch { /* ignore fs errors */ }
+}
 
 // ─── Text cleaner ─────────────────────────────────────────────────────────────
 function cleanTextForSpeech(raw: string): string {
@@ -68,6 +81,7 @@ export function stopSpeaking(): void {
     activeTtsProcess = null;
   }
   isSpeaking = false;
+  setSpeakingFlag(false);
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
@@ -82,6 +96,7 @@ export async function speak(text: string): Promise<void> {
   // Reset interrupt flag for this new response
   interrupted = false;
   isSpeaking = true;
+  setSpeakingFlag(true);
 
   console.log(`\n🎙️ [Buddy]: ${text}\n`);
   emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
@@ -97,6 +112,7 @@ export async function speak(text: string): Promise<void> {
   // Only mark idle if we weren't interrupted in the middle
   if (!interrupted) {
     isSpeaking = false;
+    setSpeakingFlag(false);
     emitToDashboard('VOICE_STATUS', { state: 'idle' });
   }
 }

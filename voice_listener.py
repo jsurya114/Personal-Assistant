@@ -16,15 +16,39 @@ COMMAND_KEYWORDS = [
     "good morning", "good night", "hello", "hi",
 ]
 
+# Shared speaking state — written by Node's stdout replies via env trick.
+# Since we removed stdin IPC, Node cannot signal us. Instead we track
+# whether we've recently heard our own TTS output by checking a flag
+# passed via a simple file-based semaphore.
+buddy_speaking_flag = '/tmp/ultron_buddy_speaking'
+
+import os
+
+def is_buddy_speaking() -> bool:
+    return os.path.exists(buddy_speaking_flag)
+
 def listen_continuously():
     recognizer = sr.Recognizer()
     recognizer.dynamic_energy_threshold = True
-    recognizer.pause_threshold = 0.4
-    recognizer.non_speaking_duration = 0.2
+
+    # ── Normal mode (Boss speaking): generous pause so full phrase captured ──
+    # pause_threshold: seconds of silence after speech ends = end of phrase
+    # non_speaking_duration: how long silence must persist before stop
+    NORMAL_PAUSE     = 1.0   # wait 1s of silence after Boss stops talking
+    NORMAL_NON_SPEAK = 0.5   # 0.5s non-speaking to close phrase
+    NORMAL_PHRASE    = 15    # allow up to 15 seconds per command
+
+    # ── Interrupt mode (Buddy speaking): fast, short chunks ──
+    INTERRUPT_PAUSE     = 0.3
+    INTERRUPT_NON_SPEAK = 0.2
+    INTERRUPT_PHRASE    = 3    # capture quickly so interrupt fires fast
+
+    recognizer.pause_threshold    = NORMAL_PAUSE
+    recognizer.non_speaking_duration = NORMAL_NON_SPEAK
 
     # Adjust for ambient noise once at startup
     with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        recognizer.adjust_for_ambient_noise(source, duration=0.8)
 
     print(json.dumps({"status": "ready"}), flush=True)
 
@@ -33,9 +57,20 @@ def listen_continuously():
 
     while True:
         try:
+            speaking = is_buddy_speaking()
+
+            # Adjust recognizer thresholds based on whether Buddy is speaking
+            if speaking:
+                recognizer.pause_threshold       = INTERRUPT_PAUSE
+                recognizer.non_speaking_duration = INTERRUPT_NON_SPEAK
+                phrase_limit = INTERRUPT_PHRASE
+            else:
+                recognizer.pause_threshold       = NORMAL_PAUSE
+                recognizer.non_speaking_duration = NORMAL_NON_SPEAK
+                phrase_limit = NORMAL_PHRASE
+
             with sr.Microphone() as source:
-                # Use very short phrase_time_limit so every word is captured quickly
-                audio = recognizer.listen(source, phrase_time_limit=3, timeout=None)
+                audio = recognizer.listen(source, phrase_time_limit=phrase_limit, timeout=None)
 
             text = recognizer.recognize_google(audio).strip().lower()
             if not text or len(text) < 2:
