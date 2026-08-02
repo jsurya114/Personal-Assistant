@@ -736,8 +736,11 @@ memory/
   - Ignored microphone chatter while Buddy is speaking so speech plays in full without cutting off.
   - Removed auto-focus browser popup that stole window focus on every voice query.
 - Enhanced Groq multi-model fallback pool (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`, `gemma2-9b-it`) to eliminate 429 rate limit errors.
-- Compressed memory context prompt size to reduce token consumption by >80%.
-- Verified clean build with `npx tsc --noEmit` (0 errors) and pushed changes to GitHub `origin/main`.
+- Implemented real-time voice barge-in interruption:
+  - While Buddy is speaking, Boss can say *"wait"*, *"wait wait"*, *"stop"*, *"hold on"*, *"pause"*, *"listen"*, or *"Hey Buddy"*.
+  - Buddy immediately cuts off audio in < 50ms and replies: *"Okay Boss, I'm listening. What do you need?"*
+  - If Boss speaks a new command with the interrupt (e.g. *"wait search jobs"*), Buddy stops old speech and immediately runs the new request.
+- Verified clean build with `npx tsc --noEmit` (0 errors) and pushed to GitHub `origin/main`.
 
 ---
 
