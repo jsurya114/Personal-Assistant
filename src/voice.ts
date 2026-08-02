@@ -6,9 +6,11 @@ import { emitToDashboard } from './services/socket';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let assistant: UltronAssistant;
-let isSpeaking = false;
+let isSpeaking = false;       // true while any sentence is playing
+let interrupted = false;      // set when Boss speaks during playback
 let isProcessing = false;
 let activeTtsProcess: ReturnType<typeof spawn> | null = null;
+let listenerProcess: ReturnType<typeof spawn> | null = null;
 
 // ─── Text cleaner ─────────────────────────────────────────────────────────────
 function cleanTextForSpeech(raw: string): string {
@@ -27,8 +29,54 @@ function cleanTextForSpeech(raw: string): string {
     .trim();
 }
 
-// ─── Stop current speech immediately ─────────────────────────────────────────
+// ─── Split text into short speakable sentences ────────────────────────────────
+function splitIntoSentences(text: string): string[] {
+  // Split on . ! ? and also on commas for extra responsiveness
+  const parts = text
+    .split(/(?<=[.!?])\s+/)   // split after sentence-ending punctuation
+    .map(s => s.trim())
+    .filter(s => s.length > 1);
+
+  // If no splits found (one long sentence), split at ~60 char word boundaries
+  if (parts.length <= 1 && text.length > 80) {
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > 80) {
+      const cutAt = remaining.lastIndexOf(' ', 80);
+      if (cutAt < 20) break;
+      chunks.push(remaining.slice(0, cutAt).trim());
+      remaining = remaining.slice(cutAt + 1).trim();
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks.length > 0 ? chunks : parts;
+  }
+
+  return parts;
+}
+
+// ─── Speak a single chunk synchronously ──────────────────────────────────────
+function speakChunk(chunk: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (interrupted) { resolve(); return; }
+
+    activeTtsProcess = spawn('say', [chunk]);
+
+    activeTtsProcess.on('close', () => {
+      activeTtsProcess = null;
+      resolve();
+    });
+
+    activeTtsProcess.on('error', (err) => {
+      console.error('TTS chunk error:', err.message);
+      activeTtsProcess = null;
+      resolve();
+    });
+  });
+}
+
+// ─── Stop any active TTS immediately ─────────────────────────────────────────
 export function stopSpeaking(): void {
+  interrupted = true;   // signal the sentence loop to abort
   if (activeTtsProcess) {
     try { activeTtsProcess.kill('SIGKILL'); } catch {}
     activeTtsProcess = null;
@@ -37,39 +85,34 @@ export function stopSpeaking(): void {
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
 
-// ─── Speak via macOS native TTS ───────────────────────────────────────────────
-export function speak(text: string): Promise<void> {
-  return new Promise((resolve) => {
-    // Kill any current speech before starting new one
-    if (activeTtsProcess) {
-      try { activeTtsProcess.kill('SIGKILL'); } catch {}
-      activeTtsProcess = null;
-    }
+// ─── Speak full response sentence by sentence ─────────────────────────────────
+export async function speak(text: string): Promise<void> {
+  // Stop any current speech
+  stopSpeaking();
 
-    const clean = cleanTextForSpeech(text);
-    if (!clean) { resolve(); return; }
+  const clean = cleanTextForSpeech(text);
+  if (!clean) return;
 
-    isSpeaking = true;
-    console.log(`\n🎙️ [Buddy]: ${text}\n`);
+  // Reset interrupt flag for this new response
+  interrupted = false;
+  isSpeaking = true;
 
-    emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
-    emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
+  console.log(`\n🎙️ [Buddy]: ${text}\n`);
+  emitToDashboard('VOICE_BUDDY_SPEAKING', { text, cleanText: clean });
+  emitToDashboard('VOICE_STATUS', { state: 'speaking', text: clean });
 
-    activeTtsProcess = spawn('say', [clean]);
+  const sentences = splitIntoSentences(clean);
 
-    const done = () => {
-      isSpeaking = false;
-      activeTtsProcess = null;
-      emitToDashboard('VOICE_STATUS', { state: 'idle' });
-      resolve();
-    };
+  for (const sentence of sentences) {
+    if (interrupted) break;   // Boss interrupted — stop immediately
+    await speakChunk(sentence);
+  }
 
-    activeTtsProcess.on('close', done);
-    activeTtsProcess.on('error', (err) => {
-      console.error('TTS error:', err.message);
-      done();
-    });
-  });
+  // Only mark idle if we weren't interrupted in the middle
+  if (!interrupted) {
+    isSpeaking = false;
+    emitToDashboard('VOICE_STATUS', { state: 'idle' });
+  }
 }
 
 // ─── Handle a voice command from Boss ────────────────────────────────────────
@@ -107,7 +150,7 @@ export function startVoiceDaemon(): void {
   const listenerScript = path.resolve(__dirname, '../voice_listener.py');
 
   const child = spawn(pythonExecutable, [listenerScript], {
-    stdio: ['ignore', 'pipe', 'pipe']   // stdin=ignore, stdout/stderr piped
+    stdio: ['ignore', 'pipe', 'pipe']
   });
 
   child.stdout.on('data', (data: Buffer) => {
@@ -126,10 +169,11 @@ export function startVoiceDaemon(): void {
           const text = payload.text ?? '';
 
           if (isSpeaking) {
-            // Boss said ANYTHING while Buddy is speaking → stop immediately and listen
-            console.log(`⚡ [Interrupt]: Boss spoke while Buddy was talking → stopping.`);
+            // Boss said ANYTHING while Buddy is speaking → stop at next sentence boundary
+            console.log(`⚡ [Interrupt]: "${text}" — stopping Buddy.`);
             stopSpeaking();
-            speak("Go ahead Boss, I am listening.");
+            // Small delay to let SIGKILL settle, then acknowledge
+            setTimeout(() => speak("Go ahead Boss, I am listening."), 300);
 
           } else if (payload.type === 'command' && !isProcessing) {
             handleCommand(text);
@@ -162,8 +206,6 @@ export function startVoiceDaemon(): void {
 
   listenerProcess = child;
 }
-
-let listenerProcess: ReturnType<typeof spawn> | null = null;
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 if (require.main === module) {
