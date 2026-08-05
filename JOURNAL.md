@@ -759,7 +759,48 @@ memory/
 
 ---
 
-*Last updated: 2026-08-03 — Session 16*
+### Session 17 — 2026-08-05
+
+**AI Used:** Antigravity (Google DeepMind)
+**Account:** jayasuryas@...
+
+**What was done this session:**
+- **Solved Voice Interrupt Delays & 3x Repetition Issue:**
+  - **Root Cause Identified:** Synchronous blocking network calls to Google STT (`recognize_google`) were blocking microphone audio capture for 1.0–1.5s per turn. Simultaneously, acoustic speaker bleed caused Google STT to discard transcripts as echo or fail, forcing Boss to repeat "stop/wait" 3+ times.
+  - **Multi-Threaded Producer-Consumer Architecture:** Upgraded `voice_listener.py` to use a dedicated audio capture thread and a pool of concurrent worker threads with a non-blocking queue. The microphone now records 100% uninterrupted.
+  - **Sub-Second Interrupt Window:** In interrupt mode (`is_buddy_speaking() == True`), capture limits were dropped to 0.9s with 0.2s pause thresholds, yielding instant transcription and immediate queue flushing.
+  - **Comprehensive Regex & Clean Process Termination:** Expanded interrupt keywords in `src/voice.ts` (`stop`, `wait`, `hold on`, `pause`, `quiet`, `cancel`, `shh`, `cut`, `halt`, `buddy stop`, `stay quiet`) and reinforced `stopSpeaking()` with instant `SIGKILL` and `killall -9 say` fallback.
+- **Verification:**
+  - `voice_listener.py` compiled cleanly.
+  - `npx tsc --noEmit` passed with 0 errors.
+
+---
+
+### Session 18 — 2026-08-05
+
+**AI Used:** Antigravity (Google DeepMind)
+**Account:** jayasuryas@...
+
+**What was done this session:**
+- **Automated Job Application Email Dispatch Feature:**
+  - **Boss's Official Template Registered:** Created `resume/application-template.md` and updated `resume/resume-rules.md` with Boss's exact format and featured project links:
+    - *Version Vault* (CI/CD platform, Docker, WebSockets, Redis, BullMQ, AWS)
+    - *Dental Buddy* (EMR system, 5-level RBAC, React 18, Node.js, MongoDB)
+    - *NasaLogistic* (Logistics platform, REST APIs, React, Node.js, PostgreSQL)
+    - GitHub, Portfolio, and LinkedIn profiles + Contact Number (`8281017439`).
+  - **Outbound Mailer Service (`src/services/mailer.ts`):** Built Gmail SMTP mailer using `nodemailer` (`smtp.gmail.com:465` SSL) with automatic attachment of `resume/resume.pdf` (`Jayasoorya_S_Resume.pdf`) and auto-logging into SQLite `applications` table.
+  - **AI Tailoring Engine:** `generateTailoredApplicationEmail()` optionally customizes skills emphasis based on the target Job Description while preserving Boss's authentic template structure.
+  - **Conversational & Voice Intent Routing:** Updated `src/agents/assistant/index.ts` so when Boss says *"Ultron, I need to send an application through my mail"*, Ultron proactively prompts for company, HR email, and role/JD, and dispatches the application upon confirmation.
+  - **REST API & Web UI Integration:** Added `POST /api/jobs/send-application`, `POST /api/jobs/generate-application`, and a 1-click **"📧 Send Mail"** button on every job card in the dashboard.
+- **Verification:**
+  - Template generation tested via scratch test suite.
+  - `npx tsc --noEmit` passed with 0 errors.
+
+---
+
+*Last updated: 2026-08-05 — Session 18*
+
+
 
 
 

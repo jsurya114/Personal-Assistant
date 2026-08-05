@@ -22,6 +22,7 @@ import { config } from '../../config';
 import { emitToDashboard } from '../../services/socket';
 import { gitService } from '../../services/git';
 import { liveSearchService } from '../../services/liveSearch';
+import { sendApplicationEmail } from '../../services/mailer';
 
 function detectIntent(message: string): AgentType {
   const lower = message.toLowerCase();
@@ -194,8 +195,77 @@ export class UltronAssistant {
       }
     }
 
-    // If email / inbox check intent
-    const isEmailIntent = /(email|mail|inbox|job alert|interview mail|application mail|read my|read email|read inbox|check my email|check my latest|any new mail|unread)/i.test(lowerMessage);
+    // If outbound application email intent (send application / apply via email)
+    const isOutboundApplicationIntent = /(send|dispatch|draft|write|mail).* (an? |the )?(application|job application|email to|mail to)|(apply|application) (to|for|via email|through my mail|through mail)|send (an? )?application (through|via|from) (my )?mail|send (an? )?email (to|for)/i.test(lowerMessage);
+
+    if (isOutboundApplicationIntent) {
+      try {
+        logAgent('HUNTER-MAILER', `Processing outbound application request: ${lowerMessage}`);
+        
+        // Extract email address if present
+        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
+        const emailMatch = message.match(emailRegex);
+        const recipientEmail = emailMatch ? emailMatch[1] : null;
+
+        // Extract company and role if specified in message
+        let targetCompany = '';
+        let targetRole = '';
+
+        const companyMatch = message.match(/(?:at|for company|to company|company:?)\s+([A-Za-z0-9\s&.,'-]+?)(?:\s+(?:for|as|role|position|with|at|to)\b|\s*$)/i);
+        if (companyMatch && !companyMatch[1].toLowerCase().includes('position') && !companyMatch[1].toLowerCase().includes('role')) {
+          targetCompany = companyMatch[1].trim();
+        }
+
+        const roleMatch = message.match(/(?:position of|role of|position|role|for the|as a|as an|as)\s+([A-Za-z0-9\s/'-]+?)(?:\s+(?:at|in|with|to)\b|\s*$)/i);
+        if (roleMatch) {
+          targetRole = roleMatch[1].trim();
+        }
+
+        if (recipientEmail) {
+          const company = targetCompany || 'Hiring Team';
+          const role = targetRole || 'Software Engineer / Full Stack Developer';
+          
+          logAgent('HUNTER-MAILER', `Attempting to dispatch application to ${recipientEmail} (${company} - ${role})...`);
+          const mailResult = await sendApplicationEmail({
+            to: recipientEmail,
+            company,
+            role,
+            attachResume: true,
+          });
+
+          if (mailResult.success) {
+            jobContext += `\n\n[JOB APPLICATION SENT SUCCESSFULLY]:
+- Recipient: ${recipientEmail}
+- Company: ${company}
+- Position: ${role}
+- Resume Attached: ${mailResult.resumeAttached ? 'Yes (Jayasoorya_S_Resume.pdf)' : 'No'}
+- Status: Dispatched directly from ${config.email.user} via Gmail SMTP and recorded in SQLite Applications tracker.
+Inform Boss cheerfully that his application email with his 3 featured projects (Version Vault, Dental Buddy, NasaLogistic) and resume has been sent!`;
+          } else {
+            jobContext += `\n\n[JOB APPLICATION DISPATCH FAILED / PENDING CONFIG]:
+- Recipient: ${recipientEmail}
+- Company: ${company}
+- Position: ${role}
+- Error: ${mailResult.error}
+Tell Boss you generated his standard application email with his projects (Version Vault, Dental Buddy, NasaLogistic) and resume, but provide the reason (e.g. Gmail App Password needed in .env).`;
+          }
+        } else {
+          jobContext += `\n\n[OUTBOUND JOB APPLICATION REQUEST]:
+Boss wants to send a job application through his email (${config.email.user}).
+Ultron has Boss's standard application template, featured projects (Version Vault, Dental Buddy, NasaLogistic), and resume (resume/resume.pdf) ready to dispatch.
+PROMPT BOSS FOR THE DETAILS:
+1. Recipient HR / Company Email address (e.g., hr@company.com)
+2. Company Name & Job Title (e.g., Qmark Technolabs - Software Engineer)
+3. (Optional) Job Description to auto-tailor the skills
+Assure Boss that as soon as he provides the email address and company, Ultron will dispatch the email with his resume attached immediately!`;
+        }
+      } catch (e) {
+        logger.error(`Application mailer intent error: ${e}`);
+      }
+    }
+
+    // If email / inbox check intent (reading emails)
+    const isEmailIntent = !isOutboundApplicationIntent && /(email|mail|inbox|job alert|interview mail|application mail|read my|read email|read inbox|check my email|check my latest|any new mail|unread)/i.test(lowerMessage);
 
     if (isEmailIntent) {
       try {

@@ -236,10 +236,63 @@ router.post('/git/remote', async (req: Request, res: Response) => {
 import { stopSpeaking } from '../voice';
 import { autoApplyAgent } from '../agents/autoApply';
 import { liveSearchService } from '../services/liveSearch';
+import { sendApplicationEmail, generateTailoredApplicationEmail, buildStandardApplicationBody } from '../services/mailer';
 
 router.post('/voice/interrupt', (_req: Request, res: Response) => {
   stopSpeaking();
   res.json({ success: true, message: 'Voice output halted' });
+});
+
+// ---- Email Application Dispatch ----
+
+const sendApplicationSchema = z.object({
+  to: z.string().email(),
+  company: z.string().min(1),
+  role: z.string().min(1),
+  jobDescription: z.string().optional(),
+  customSubject: z.string().optional(),
+  customBody: z.string().optional(),
+  attachResume: z.boolean().optional().default(true),
+});
+
+router.post('/jobs/send-application', async (req: Request, res: Response) => {
+  try {
+    const body = sendApplicationSchema.parse(req.body);
+    const result = await sendApplicationEmail(body);
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation error', details: error.errors });
+    } else {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: msg });
+    }
+  }
+});
+
+const generateApplicationSchema = z.object({
+  company: z.string().min(1),
+  role: z.string().min(1),
+  jobDescription: z.string().optional(),
+});
+
+router.post('/jobs/generate-application', async (req: Request, res: Response) => {
+  try {
+    const body = generateApplicationSchema.parse(req.body);
+    const result = await generateTailoredApplicationEmail(body.company, body.role, body.jobDescription);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation error', details: error.errors });
+    } else {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: msg });
+    }
+  }
 });
 
 // ---- Auto Apply ----
@@ -253,8 +306,9 @@ router.post('/auto-apply', async (req: Request, res: Response) => {
       dryRun: dryRun !== false, // default to safe review mode
     });
     res.json({ success: true, count: results.length, applications: results });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -264,8 +318,9 @@ router.get('/live-search', async (req: Request, res: Response) => {
     const query = String(req.query.q || '');
     const results = await liveSearchService.searchNews(query);
     res.json({ success: true, count: results.length, results });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: msg });
   }
 });
 

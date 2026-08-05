@@ -1120,12 +1120,47 @@
             <div class="job-salary">Match Score: ${j.matchScore || 90}% · ${j.platform || 'LinkedIn'}</div>
             <div class="job-actions">
               <button class="btn-apply" onclick="window.open('${j.url}','_blank')">🔗 Open Post</button>
-              <button class="btn-auto-apply" onclick="triggerAutoApply('${j.role.replace(/'/g, "\\'")}', '${j.company.replace(/'/g, "\\'")}')">⚡ Auto-Apply</button>
+              <button class="btn-auto-apply" style="background:rgba(59,130,246,0.15); color:var(--accent); border:1px solid rgba(59,130,246,0.3);" onclick="sendEmailApplication('${j.role.replace(/'/g, "\\'")}', '${j.company.replace(/'/g, "\\'")}')">📧 Send Mail</button>
+              <button class="btn-auto-apply" onclick="triggerAutoApply('${j.role.replace(/'/g, "\\'")}', '${j.company.replace(/'/g, "\\'")}')">⚡ Easy Apply</button>
             </div>
           </div>
         `).join('');
       } catch(e) {
         list.innerHTML = '<div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:20px;">Error loading jobs.</div>';
+      }
+    }
+
+    async function sendEmailApplication(role, company) {
+      const email = prompt(`Enter Recipient HR / Company Email for "${role}" at ${company}:`);
+      if (!email) return;
+      
+      if (!email.includes('@')) {
+        alert('Please enter a valid email address.');
+        return;
+      }
+
+      const confirmSend = confirm(`Send standard application email to ${email} for "${role}" at "${company}" with resume.pdf attached from jayasuryabrocamp@gmail.com?`);
+      if (!confirmSend) return;
+
+      try {
+        const res = await fetch('/api/jobs/send-application', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: email.trim(),
+            company: company,
+            role: role,
+            attachResume: true,
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`✅ Application successfully sent to ${email} for ${role} at ${company}!\nResume attached: ${data.resumeAttached ? 'Yes' : 'No'}`);
+        } else {
+          alert(`⚠️ Could not send: ${data.error || 'Check server logs / GMAIL_APP_PASSWORD'}`);
+        }
+      } catch(e) {
+        alert(`Error: ${e.message}`);
       }
     }
 

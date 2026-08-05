@@ -24,3 +24,9 @@ resume/resume.pdf
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Python cache
+__pycache__/
+*.py[cod]
+.venv/
+

@@ -66,6 +66,7 @@ Phase 7 — Discord Bot Setup  [████████████████
 | Adzuna API integration         | ✅ Done          | 1       | Built, needs ADZUNA credentials |
 | Application tracker            | ✅ Done          | 1       | Full CRUD in routes.ts          |
 | Cover letter generation        | ✅ Done          | 6       | AI-powered generation service   |
+| Outbound Job Application Mailer| ✅ Done          | 18      | Direct Gmail SMTP dispatch + PDF attach + DB tracker |
 | Resume PDF parsing             | ⏳ Not Started   | -       | To be done in a future phase    |
 | Real job search test           | ✅ Done          | 6       | API tested via API route        |
 
@@ -93,14 +94,15 @@ Phase 7 — Discord Bot Setup  [████████████████
 
 ---
 
-## ⏳ Phase 5 — Voice Assistant
+## 🔄 Phase 5 — Voice Assistant (Active Daemon)
 
-| Task                    | Status         | Notes                            |
-| ----------------------- | -------------- | -------------------------------- |
-| Wake word detection     | ⏳ Not Started  | Porcupine or OpenWakeWord        |
-| Whisper speech-to-text  | ⏳ Not Started  | Local whisper.cpp or OpenAI API  |
-| Piper text-to-speech    | ⏳ Not Started  | Local voice synthesis            |
-| Voice conversation loop | ⏳ Not Started  | Depends on above three           |
+| Task                    | Status   | Notes                                                        |
+| ----------------------- | -------- | ------------------------------------------------------------ |
+| Voice Engine Daemon     | ✅ Done  | Continuous listening (`voice_listener.py` + `src/voice.ts`)  |
+| Non-Blocking STT Queue  | ✅ Done  | Multi-threaded producer-consumer queue with worker threads   |
+| Sub-Second Interrupt    | ✅ Done  | 0.9s phrase window & 0.2s pause threshold during TTS         |
+| Acoustic Echo Filtering | ✅ Done  | Ignored speaker bleed + comprehensive interrupt regex        |
+| Keyboard & UI Barge-In  | ✅ Done  | Space/Enter in terminal & web button interrupt support       |
 
 ---
 
@@ -145,7 +147,7 @@ Phase 7 — Discord Bot Setup  [████████████████
 
 ---
 
-## 🏁 Current State (After Session 12)
+## 🏁 Current State (After Session 17)
 
 | Component          | Built? | Running? | Tested? |
 | ------------------ | ------ | -------- | ------- |
@@ -158,7 +160,7 @@ Phase 7 — Discord Bot Setup  [████████████████
 | News Service       | ✅     | ✅       | ✅ |
 | Morning Briefing   | ✅     | ✅       | ✅ |
 | Job Search (Hunter)| ✅     | ✅ Multi-agent | ✅ (70+ matches) |
-| Voice Engine       | ✅     | ✅ Active mode | ✅ |
+| Voice Engine       | ✅     | ✅ Multi-threaded Queue | ✅ Instant Sub-sec Interrupt |
 | Sentinel (Email)   | ✅     | ✅ IMAP TLS | ✅ |
 | Discord Bot        | ✅     | ✅ Online | ✅ |
 | TypeScript Build   | ✅     | ✅ Zero errors | ✅ |

@@ -62,7 +62,7 @@ function isSpeakerEcho(heardText: string): boolean {
   if (!heard || !speaking) return false;
 
   // Never consider explicit stop keywords as echo
-  if (/\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|silence|enough)\b/i.test(heard)) {
+  if (/\b(stop|wait|pause|hold\s*on|shut\s*up|quiet|cancel|hush|silence|enough|halt|cut|shh|stay\s*quiet|never\s*mind|buddy\s*stop|buddy\s*wait|stop\s*it|wait\s*wait|stop\s*stop)\b/i.test(heard)) {
     return false;
   }
 
@@ -95,6 +95,14 @@ export function stopSpeaking(): void {
       // Process already terminated
     }
     activeTtsProcess = null;
+  }
+  try {
+    const killProc = spawn('killall', ['-9', 'say']);
+    killProc.on('error', () => {
+      // Ignore if no process found
+    });
+  } catch {
+    // Ignore
   }
   emitToDashboard('VOICE_STATUS', { state: 'idle' });
 }
@@ -163,7 +171,7 @@ async function handleCommand(text: string): Promise<void> {
   if (!trimmed) return;
 
   // Pure stop / silence commands — stop immediately and stay quiet without querying LLM
-  const isPureStop = /^\s*(stop|stop\s+stop|wait|hold\s+on|shut\s+up|quiet|pause|cancel|hush|silence|enough|never\s*mind)\s*$/i.test(trimmed);
+  const isPureStop = /^\s*(stop|stop\s+stop|wait|wait\s+wait|hold\s*on|shut\s*up|quiet|pause|cancel|hush|silence|enough|halt|cut|shh|never\s*mind|stay\s*quiet)\s*$/i.test(trimmed);
   if (isPureStop) {
     console.log(`⚡ [Silence]: "${trimmed}" — staying quiet.`);
     stopSpeaking();
@@ -232,7 +240,7 @@ export function startVoiceDaemon(): void {
 
     for (const line of lines) {
       try {
-        const payload: { status?: string; type?: string; text?: string; message?: string } = JSON.parse(line);
+        const payload: { status?: string; type?: string; text?: string; message?: string; is_interrupt?: boolean } = JSON.parse(line);
 
         if (payload.status === 'ready') {
           console.log('✅ Voice Engine Ready. Listening for your voice...');
@@ -245,11 +253,11 @@ export function startVoiceDaemon(): void {
           if (!text) continue;
 
           // Check for any stop / interrupt command
-          const isExplicitStop = /\b(stop|wait|pause|hold on|shut up|quiet|cancel|hush|silence|enough|buddy stop|buddy wait)\b/i.test(text);
+          const isExplicitStop = Boolean(payload.is_interrupt) || /\b(stop|wait|pause|hold\s*on|shut\s*up|quiet|cancel|hush|silence|enough|halt|cut|shh|stay\s*quiet|never\s*mind|buddy\s*stop|buddy\s*wait|stop\s*it|wait\s*wait|stop\s*stop)\b/i.test(text);
 
           if (isSpeaking) {
             if (isExplicitStop) {
-              console.log(`⚡ [Interrupt]: "${text}" — stopping speech immediately.`);
+              console.log(`⚡ [Instant Interrupt]: "${text}" — stopping speech immediately.`);
               stopSpeaking();
               continue; // Do NOT speak back, stay quiet and ready for next command
             }
