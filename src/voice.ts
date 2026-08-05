@@ -86,6 +86,7 @@ function isSpeakerEcho(heardText: string): boolean {
 // ─── Stop any active TTS immediately ─────────────────────────────────────────
 export function stopSpeaking(): void {
   isSpeaking = false;
+  isProcessing = false;
   currentlySpeakingText = '';
   setSpeakingFlag(false);
   if (activeTtsProcess) {

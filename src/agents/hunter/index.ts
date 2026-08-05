@@ -157,18 +157,19 @@ export const hunterAgent = {
   },
 
   // ---- Run Multi-Platform Job Search ----
-  async runJobSearch(): Promise<{ found: number; saved: number; newJobs: JobMatch[] }> {
-    logAgent('HUNTER', '🔍 Starting autonomous multi-platform job hunt across sub-agents...');
+  async runJobSearch(preferredPlatform?: string): Promise<{ found: number; saved: number; newJobs: JobMatch[] }> {
+    const platformStr = preferredPlatform ? preferredPlatform.toLowerCase() : '';
+    logAgent('HUNTER', `🔍 Starting autonomous job hunt across ${platformStr ? platformStr : 'all platforms'}...`);
 
-    const subAgentPromises = [
-      this.linkedIn.search('Backend Developer Node.js India'),
-      this.indeed.search('Backend Developer TypeScript Node.js India'),
-      this.glassdoor.search('Node.js Backend Engineer India'),
-      this.searchJobsJSearch('Backend Developer Node.js TypeScript India'),
-      this.searchJobsAdzuna(),
-    ];
+    const promises: Promise<JobMatch[]>[] = [];
 
-    const results = await Promise.allSettled(subAgentPromises);
+    if (!platformStr || platformStr.includes('linkedin')) promises.push(this.linkedIn.search('Backend Developer Node.js India'));
+    if (!platformStr || platformStr.includes('indeed')) promises.push(this.indeed.search('Backend Developer TypeScript Node.js India'));
+    if (!platformStr || platformStr.includes('glassdoor')) promises.push(this.glassdoor.search('Node.js Backend Engineer India'));
+    if (!platformStr || platformStr.includes('jsearch')) promises.push(this.searchJobsJSearch('Backend Developer Node.js TypeScript India'));
+    if (!platformStr || platformStr.includes('adzuna')) promises.push(this.searchJobsAdzuna());
+
+    const results = await Promise.allSettled(promises);
     const allJobs: JobMatch[] = [];
 
     for (const result of results) {

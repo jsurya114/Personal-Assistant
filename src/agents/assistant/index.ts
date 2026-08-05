@@ -172,11 +172,16 @@ export class UltronAssistant {
     // If hunter intent, actually run job search and inject real results
     if (!jobContext && agentType === 'hunter' && /(job|search|find|hunt|look|backend|developer|role|position|opening|linkedin|indeed|resume)/i.test(lowerMessage)) {
       try {
-        logAgent('HUNTER', `Executing real multi-agent job search matching resume (${resumeProfile.skills.length} skills parsed)...`);
-        const searchResult = await hunterAgent.runJobSearch();
+        let preferredPlatform = '';
+        if (lowerMessage.includes('linkedin')) preferredPlatform = 'linkedin';
+        else if (lowerMessage.includes('indeed')) preferredPlatform = 'indeed';
+        else if (lowerMessage.includes('glassdoor')) preferredPlatform = 'glassdoor';
+
+        logAgent('HUNTER', `Executing real multi-agent job search matching resume (${resumeProfile.skills.length} skills parsed)${preferredPlatform ? ` on ${preferredPlatform}` : ''}...`);
+        const searchResult = await hunterAgent.runJobSearch(preferredPlatform);
         let jobs = searchResult.newJobs.length > 0 ? searchResult.newJobs : hunterAgent.getTopJobMatches(5);
         
-        if (jobs.length === 0) {
+        if (jobs.length === 0 && !preferredPlatform) {
           jobs = await hunterAgent.searchJobsJSearch();
         }
 
